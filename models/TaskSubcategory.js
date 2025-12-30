@@ -1,0 +1,638 @@
+const mongoose = require('mongoose');
+
+const TaskSubcategorySchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: [true, 'Subcategory name is required'],
+      trim: true,
+    },
+    slug: {
+      type: String,
+      required: [true, 'Subcategory slug is required'],
+      trim: true,
+      lowercase: true,
+    },
+    categorySlug: {
+      type: String,
+      required: [true, 'Category slug is required'],
+      trim: true,
+      lowercase: true,
+    },
+    // Hero Section
+    heroTitle: {
+      type: String,
+      required: [true, 'Hero title is required'],
+      trim: true,
+    },
+    heroDescription: {
+      type: String,
+      required: [true, 'Hero description is required'],
+      trim: true,
+    },
+    heroImage: {
+      type: String,
+      trim: true,
+    },
+    // Earnings Card
+    earningsCard: {
+      weekly: {
+        '1-2': { type: String, default: '₹240' },
+        '3-5': { type: String, default: '₹600' },
+        '5+': { type: String, default: '₹840+' },
+      },
+      monthly: {
+        '1-2': { type: String, default: '₹1,039' },
+        '3-5': { type: String, default: '₹2,598' },
+        '5+': { type: String, default: '₹3,637+' },
+      },
+      yearly: {
+        '1-2': { type: String, default: '₹12,480' },
+        '3-5': { type: String, default: '₹31,200' },
+        '5+': { type: String, default: '₹43,680+' },
+      },
+    },
+    // Default earnings for the card (monthly)
+    defaultEarnings: {
+      type: String,
+      default: '₹1,039',
+    },
+    earningsPeriod: {
+      type: String,
+      default: 'per month',
+    },
+    // Earnings by task range (per month)
+    earnings1to2: {
+      type: String,
+      default: '₹1,039',
+    },
+    earnings3to5: {
+      type: String,
+      default: '₹2,598',
+    },
+    earnings5plus: {
+      type: String,
+      default: '₹3,637',
+    },
+    // Task count
+    taskCount: {
+      type: String,
+      default: '500',
+    },
+    // Location
+    location: {
+      type: String,
+      default: 'India',
+    },
+    // Earnings by job types (for the table)
+    earningsByJobTypes: {
+      weekly: mongoose.Schema.Types.Mixed,
+      monthly: mongoose.Schema.Types.Mixed,
+      yearly: mongoose.Schema.Types.Mixed,
+    },
+    // Disclaimer text
+    disclaimer: {
+      type: String,
+      default: 'Based on average accounting task prices. Actual marketplace earnings may vary',
+    },
+    // Why Join Extrahand Section
+    whyJoinTitle: {
+      type: String,
+      default: 'Why join Extrahand',
+      trim: true,
+    },
+    whyJoinFeatures: [
+      {
+        title: {
+          type: String,
+          trim: true,
+        },
+        description: {
+          type: String,
+          trim: true,
+        },
+      },
+    ],
+    whyJoinButtonText: {
+      type: String,
+      default: 'Join Extrahand',
+      trim: true,
+    },
+    // Static Tasks Section
+    staticTasksSectionTitle: {
+      type: String,
+      trim: true,
+    },
+    staticTasksSectionDescription: {
+      type: String,
+      trim: true,
+      default: 'Check out what tasks people want done near you right now...',
+    },
+    browseAllTasksButtonText: {
+      type: String,
+      trim: true,
+      default: 'Browse all tasks',
+    },
+    lastUpdatedText: {
+      type: String,
+      trim: true,
+      default: 'Last updated on 4th Dec 2025',
+    },
+    staticTasks: [
+      {
+        title: {
+          type: String,
+          trim: true,
+        },
+        price: {
+          type: String,
+          trim: true,
+        },
+        description: {
+          type: String,
+          trim: true,
+        },
+        date: {
+          type: String,
+          trim: true,
+        },
+        timeAgo: {
+          type: String,
+          trim: true,
+        },
+        status: {
+          type: String,
+          default: 'Open',
+          trim: true,
+        },
+        profileImage: {
+          type: String,
+          trim: true,
+        },
+      },
+    ],
+    // Earning Potential Section
+    earningPotentialTitle: {
+      type: String,
+      trim: true,
+      default: 'Discover your earning potential in India',
+    },
+    earningPotentialDescription: {
+      type: String,
+      trim: true,
+      default: 'Earn money with every accounting task',
+    },
+    earningPotentialButtonText: {
+      type: String,
+      trim: true,
+      default: 'Join Extrahand',
+    },
+    earningPotentialData: {
+      weekly: {
+        '1-2': { type: String, default: '₹240' },
+        '3-5': { type: String, default: '₹600' },
+        '5+': { type: String, default: '₹840+' },
+      },
+      monthly: {
+        '1-2': { type: String, default: '₹1039' },
+        '3-5': { type: String, default: '₹2598' },
+        '5+': { type: String, default: '₹3637+' },
+      },
+      yearly: {
+        '1-2': { type: String, default: '₹12480' },
+        '3-5': { type: String, default: '₹31200' },
+        '5+': { type: String, default: '₹43680+' },
+      },
+    },
+    earningPotentialDisclaimer: {
+      type: String,
+      default: '*Based on average accounting task prices in India. Actual marketplace earnings may vary',
+      trim: true,
+    },
+    // Income Opportunities Section
+    incomeOpportunitiesTitle: {
+      type: String,
+      trim: true,
+      default: 'Unlock new income opportunities in India',
+    },
+    incomeOpportunitiesDescription: {
+      type: String,
+      trim: true,
+      default: 'Explore accounting related tasks and discover your financial opportunities',
+    },
+    incomeOpportunitiesData: {
+      weekly: [
+        {
+          jobType: { type: String, trim: true },
+          '1-2': { type: String, trim: true },
+          '3-5': { type: String, trim: true },
+          '5+': { type: String, trim: true },
+        },
+      ],
+      monthly: [
+        {
+          jobType: { type: String, trim: true },
+          '1-2': { type: String, trim: true },
+          '3-5': { type: String, trim: true },
+          '5+': { type: String, trim: true },
+        },
+      ],
+      yearly: [
+        {
+          jobType: { type: String, trim: true },
+          '1-2': { type: String, trim: true },
+          '3-5': { type: String, trim: true },
+          '5+': { type: String, trim: true },
+        },
+      ],
+    },
+    incomeOpportunitiesDisclaimer: {
+      type: String,
+      trim: true,
+      default: '*Based on average accounting task prices in India. Actual marketplace earnings may vary',
+    },
+    // How to Earn Money Section
+    howToEarnTitle: {
+      type: String,
+      trim: true,
+      default: 'How to earn money on Extrahand',
+    },
+    howToEarnSteps: [
+      {
+        image: { type: String, trim: true },
+        subtitle: { type: String, trim: true },
+        description: { type: String, trim: true },
+      },
+    ],
+    howToEarnButtonText: {
+      type: String,
+      trim: true,
+      default: 'Post a task',
+    },
+    // SEO
+    metaTitle: {
+      type: String,
+      trim: true,
+    },
+    metaDescription: {
+      type: String,
+      trim: true,
+    },
+    isPublished: {
+      type: Boolean,
+      default: false,
+    },
+    // Task cards array (stored in database)
+    tasks: [
+      {
+        title: {
+          type: String,
+          trim: true,
+        },
+        price: {
+          type: String,
+          trim: true,
+        },
+        description: {
+          type: String,
+          trim: true,
+        },
+        profileImage: {
+          type: String,
+          trim: true,
+        },
+      },
+    ],
+    // Get Inspired: Top Taskers Section
+    getInspiredTitle: {
+      type: String,
+      trim: true,
+      default: 'Get Inspired: Top Accounting Taskers in India',
+    },
+    getInspiredButtonText: {
+      type: String,
+      trim: true,
+      default: 'Join Extrahand',
+    },
+    topTaskers: [
+      {
+        meetText: {
+          type: String,
+          trim: true,
+          default: 'meet',
+        },
+        profileImage: {
+          type: String,
+          trim: true,
+        },
+        name: {
+          type: String,
+          trim: true,
+        },
+        yearsOnExtrahand: {
+          type: String,
+          trim: true,
+        },
+        location: {
+          type: String,
+          trim: true,
+        },
+        rating: {
+          type: String,
+          trim: true,
+        },
+        overallRatingText: {
+          type: String,
+          trim: true,
+        },
+        reviewsCount: {
+          type: String,
+          trim: true,
+        },
+        completionRate: {
+          type: String,
+          trim: true,
+        },
+        completionRateText: {
+          type: String,
+          trim: true,
+        },
+        tasksCount: {
+          type: String,
+          trim: true,
+        },
+      },
+    ],
+    // We've Got You Covered Section
+    insuranceCoverTitle: {
+      type: String,
+      trim: true,
+      default: "We've got you covered",
+    },
+    insuranceCoverDescription: {
+      type: String,
+      trim: true,
+      default: "Whether you're a posting a task or completing a task, you can do both with the peace of mind that Extrahand is there to support.",
+    },
+    insuranceCoverButtonText: {
+      type: String,
+      trim: true,
+      default: "Extrahand's insurance cover",
+    },
+    insuranceCoverFeatures: [
+      {
+        icon: {
+          type: String,
+          trim: true,
+          enum: ["human", "star"],
+          default: "human",
+        },
+        subtitle: {
+          type: String,
+          trim: true,
+        },
+        subdescription: {
+          type: String,
+          trim: true,
+        },
+      },
+    ],
+    // Top Accounting related questions Section
+    questionsTitle: {
+      type: String,
+      trim: true,
+      default: "Top Accounting related questions",
+    },
+    questions: [
+      {
+        subtitle: {
+          type: String,
+          trim: true,
+        },
+        description: {
+          type: String,
+          trim: true,
+        },
+      },
+    ],
+    // Ways to earn money with accounting tasks section
+    waysToEarnTitle: {
+      type: String,
+      trim: true,
+      default: "Ways to earn money with accounting tasks on Extrahand",
+    },
+    waysToEarnContent: [
+      {
+        heading: {
+          type: String,
+          trim: true,
+        },
+        text: {
+          type: String,
+          trim: true,
+        },
+      },
+    ],
+    // Explore other ways to earn money section
+    exploreOtherWaysTitle: {
+      type: String,
+      trim: true,
+      default: "Explore other ways to earn money in India",
+    },
+    exploreOtherWaysImage: {
+      type: String,
+      trim: true,
+    },
+    exploreOtherWaysTasks: [
+      {
+        subtitle: {
+          type: String,
+          trim: true,
+        },
+        subheading: {
+          type: String,
+          trim: true,
+        },
+        image: {
+          type: String,
+          trim: true,
+        },
+      },
+    ],
+    exploreOtherWaysButtonText: {
+      type: String,
+      trim: true,
+      default: "Explore more tasks",
+    },
+    exploreOtherWaysDisclaimer: {
+      type: String,
+      trim: true,
+      default: "*Based on average prices from 1-2 completed tasks in India. Actual marketplace earnings may vary.",
+    },
+    // Top Locations Section
+    topLocationsIcon: {
+      type: String,
+      trim: true,
+      default: "location",
+    },
+    topLocationsTitle: {
+      type: String,
+      trim: true,
+      default: "Browse our top locations",
+    },
+    topLocationsHeadings: {
+      type: [String],
+      default: [
+        "Delhi",
+        "Mumbai",
+        "Kolkata",
+        "Chennai",
+        "Pune",
+        "Surat",
+        "Jaipur",
+        "Bangalore",
+        "Hyderabad",
+        "Ahmedabad",
+        "Noida",
+        "Gurugram",
+      ],
+    },
+    // Browse Similar Tasks Section
+    browseSimilarTasksIcons: {
+      type: [String],
+      default: ["wrench", "brush", "pencil"],
+    },
+    browseSimilarTasksTitle: {
+      type: String,
+      trim: true,
+      default: "Browse similar tasks near me",
+    },
+    browseSimilarTasksHeadings: {
+      type: [String],
+      default: [
+        "Financial Modelling",
+        "Financial Planning",
+        "Financial Reporting",
+      ],
+    },
+    // Footer Section
+    footer: {
+      discoverHeading: {
+        type: String,
+        trim: true,
+        default: "Discover",
+      },
+      discoverLinks: {
+        type: [String],
+        default: [
+          "How it works",
+          "Extrahand for business",
+          "Earn money",
+          "Side Hustle Calculator",
+          "Search tasks",
+          "Cost Guides",
+          "Service Guides",
+          "Comparison Guides",
+          "Gift Cards",
+          "Student Discount",
+          "Partners",
+          "New users FAQ"
+        ],
+      },
+      companyHeading: {
+        type: String,
+        trim: true,
+        default: "Company",
+      },
+      companyLinks: {
+        type: [String],
+        default: [
+          "About us",
+          "Careers",
+          "Media enquiries",
+          "Community Guidelines",
+          "Tasker Principles",
+          "Terms and Conditions",
+          "Blog",
+          "Contact us",
+          "Privacy policy",
+          "Investors"
+        ],
+      },
+      existingMembersHeading: {
+        type: String,
+        trim: true,
+        default: "Existing Members",
+      },
+      existingMembersLinks: {
+        type: [String],
+        default: [
+          "Post a task",
+          "Browse tasks",
+          "Login",
+          "Support centre"
+        ],
+      },
+      popularCategoriesHeading: {
+        type: String,
+        trim: true,
+        default: "Popular Categories",
+      },
+      popularCategoriesLinks: {
+        type: [String],
+        default: [
+          "Handyman Services",
+          "Cleaning Services",
+          "Delivery Services",
+          "Removalists",
+          "Gardening Services",
+          "Auto Electricians",
+          "Assembly Services",
+          "All Services"
+        ],
+      },
+      popularLocationsHeading: {
+        type: String,
+        trim: true,
+        default: "Popular Locations",
+      },
+      popularLocations: {
+        type: [String],
+        default: [
+          "Chennai",
+          "Pune",
+          "Surat",
+          "Jaipur",
+          "Bangalore",
+          "Hyderabad",
+          "Ahmedabad"
+        ],
+      },
+      copyrightText: {
+        type: String,
+        trim: true,
+        default: "Extrahand Limited 2011-2025 ©, All rights reserved",
+      },
+      appleStoreImage: {
+        type: String,
+        trim: true,
+      },
+      googlePlayImage: {
+        type: String,
+        trim: true,
+      },
+    },
+  },
+  {
+    timestamps: true,
+    strict: true,
+  }
+);
+
+// Create indexes for faster queries
+TaskSubcategorySchema.index({ slug: 1 }, { unique: true });
+TaskSubcategorySchema.index({ categorySlug: 1 });
+TaskSubcategorySchema.index({ isPublished: 1 });
+
+module.exports = mongoose.model('TaskSubcategory', TaskSubcategorySchema);
+
