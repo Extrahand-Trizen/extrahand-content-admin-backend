@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const TaskCategory = require('../models/TaskCategory');
 const TaskSubcategory = require('../models/TaskSubcategory');
+const authenticate = require('../middleware/auth');
+const allowRoles = require('../middleware/roles');
 
 // GET - Fetch all categories or a single category by slug
 router.get('/', async (req, res) => {
@@ -62,8 +64,8 @@ router.get('/', async (req, res) => {
   }
 });
 
-// POST - Create a new category
-router.post('/', async (req, res) => {
+// POST - Create a new category (Writer and Manager only)
+router.post('/', authenticate, allowRoles('writer', 'reviewer'), async (req, res) => {
   try {
     const body = req.body;
     
@@ -344,7 +346,9 @@ router.post('/', async (req, res) => {
       })(),
       metaTitle: cleanBody.metaTitle || heroTitle,
       metaDescription: cleanBody.metaDescription || heroDescription,
-      isPublished: cleanBody.isPublished !== undefined ? cleanBody.isPublished : false,
+      status: req.user.role === 'reviewer' ? 'APPROVED' : 'DRAFT',
+      isPublished: false,
+      createdBy: req.user._id,
       tasks: cleanBody.tasks || [],
     };
 
@@ -352,7 +356,9 @@ router.post('/', async (req, res) => {
     const savedCategory = await TaskCategory.findById(category._id).lean();
     
     return res.status(201).json({
-      message: 'Category created successfully',
+      message: req.user.role === 'reviewer' 
+        ? 'Category created and approved. You can now publish it.' 
+        : 'Category saved as draft. Submit for approval when ready.',
       category: savedCategory,
     });
   } catch (error) {
@@ -365,10 +371,11 @@ router.post('/', async (req, res) => {
 });
 
 // PUT - Update an existing category
-router.put('/', async (req, res) => {
+router.put('/:id', authenticate, allowRoles('writer', 'reviewer'), async (req, res) => {
   try {
+    const { id } = req.params; // Get ID from URL params instead of body
     const body = req.body;
-    const { id, imageFile, ...updateData } = body;
+    const { imageFile, ...updateData } = body;
     
     if (updateData.footer && typeof updateData.footer === 'object') {
       const { appleStoreImageFile, googlePlayImageFile, ...cleanFooter } = updateData.footer;
@@ -379,12 +386,101 @@ router.put('/', async (req, res) => {
       return res.status(400).json({ error: 'Category ID is required' });
     }
 
-    if (updateData.slug) {
-      const existingCategory = await TaskCategory.findOne({
+    // Find the existing category
+    const existingCategory = await TaskCategory.findById(id);
+    if (!existingCategory) {
+      return res.status(404).json({ error: 'Category not found' });
+    }
+
+    // Check permissions: only creator or manager can edit
+    if (existingCategory.createdBy && existingCategory.createdBy.toString() !== req.user._id.toString() && req.user.role !== 'reviewer') {
+      return res.status(403).json({ error: 'Not authorized to edit this category' });
+    }
+
+    // If category is PUBLISHED or APPROVED, create a new draft version for re-approval (writers only)
+    if ((existingCategory.status === 'PUBLISHED' || existingCategory.status === 'APPROVED') && req.user.role === 'writer') {
+      // Check if there's already a draft version of this category
+      const existingDraft = await TaskCategory.findOne({
+        originalCategoryId: existingCategory._id,
+        status: { $in: ['DRAFT', 'PENDING_APPROVAL', 'REJECTED'] }
+      });
+
+      // Prepare clean data
+      if (updateData.staticTasks && Array.isArray(updateData.staticTasks)) {
+        updateData.staticTasks = updateData.staticTasks.map(task => {
+          const { profileImageFile, ...cleanTask } = task;
+          return cleanTask;
+        });
+      }
+      
+      if (updateData.topTaskers && Array.isArray(updateData.topTaskers)) {
+        updateData.topTaskers = updateData.topTaskers.map(tasker => {
+          const { profileImageFile, ...cleanTasker } = tasker;
+          return cleanTasker;
+        });
+      }
+
+      if (existingDraft) {
+        // Update the existing draft instead of creating a new one
+        Object.keys(updateData).forEach((key) => {
+          if (key !== '_id' && key !== 'createdBy' && key !== 'originalCategoryId' && key !== 'isCurrentVersion') {
+            existingDraft[key] = updateData[key];
+          }
+        });
+        
+        // If it was rejected, move back to draft
+        if (existingDraft.status === 'REJECTED') {
+          existingDraft.status = 'DRAFT';
+          existingDraft.reviewNotes = '';
+          existingDraft.reviewedBy = null;
+          existingDraft.reviewedAt = null;
+        }
+
+        await existingDraft.save();
+
+        return res.status(200).json({
+          message: 'Draft version updated. Original category remains published.',
+          category: existingDraft,
+          isExistingDraft: true,
+        });
+      }
+
+      // No existing draft found, create a new draft version
+      const newVersionData = {
+        ...existingCategory.toObject(),
+        ...updateData,
+        _id: undefined,
+        status: 'DRAFT',
+        isPublished: false,
+        createdBy: req.user._id,
+        originalCategoryId: existingCategory._id,
+        isCurrentVersion: false,
+        reviewedBy: null,
+        reviewedAt: null,
+        reviewNotes: '',
+        publishedBy: null,
+        publishedAt: null,
+        createdAt: undefined,
+        updatedAt: undefined,
+      };
+
+      const newVersion = new TaskCategory(newVersionData);
+      await newVersion.save();
+
+      return res.status(200).json({
+        message: 'New draft version created for approval. Original category remains published.',
+        category: newVersion,
+        isNewVersion: true,
+      });
+    }
+
+    // For DRAFT, PENDING, or REJECTED status - direct edit is allowed
+    if (updateData.slug && updateData.slug !== existingCategory.slug) {
+      const slugExists = await TaskCategory.findOne({
         slug: updateData.slug,
         _id: { $ne: id },
       });
-      if (existingCategory) {
+      if (slugExists) {
         return res.status(409).json({
           error: 'A category with this slug already exists',
         });
@@ -405,14 +501,16 @@ router.put('/', async (req, res) => {
       });
     }
 
+    // If category was rejected, move back to draft on edit
+    if (existingCategory.status === 'REJECTED' && req.user.role === 'writer') {
+      updateData.status = 'DRAFT';
+      updateData.reviewNotes = '';
+    }
+
     const category = await TaskCategory.findByIdAndUpdate(id, updateData, {
       new: true,
       runValidators: true,
     });
-
-    if (!category) {
-      return res.status(404).json({ error: 'Category not found' });
-    }
 
     return res.status(200).json({
       message: 'Category updated successfully',
@@ -427,20 +525,46 @@ router.put('/', async (req, res) => {
   }
 });
 
-// DELETE - Delete a category
-router.delete('/', async (req, res) => {
+// DELETE - Delete a category (Writer and Manager only)
+router.delete('/:id', authenticate, allowRoles('writer', 'reviewer'), async (req, res) => {
   try {
-    const { id } = req.query;
+    let { id } = req.params; // Get ID from URL params instead of query
+
+    if (id) id = id.trim();
 
     if (!id) {
       return res.status(400).json({ error: 'Category ID is required' });
     }
 
-    const category = await TaskCategory.findByIdAndDelete(id);
+    // Validate ID format
+    const mongoose = require('mongoose');
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({ error: 'Invalid Category ID format' });
+    }
+
+    const category = await TaskCategory.findById(id);
 
     if (!category) {
       return res.status(404).json({ error: 'Category not found' });
     }
+
+    // Check permissions: only creator or manager can delete
+    // Allow deletion if: 
+    // 1. User is a manager (reviewer role), OR
+    // 2. User is the creator of the category, OR
+    // 3. Category has no creator (legacy data)
+    if (req.user.role !== 'reviewer' && category.createdBy && category.createdBy.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ error: 'Not authorized to delete this category' });
+    }
+
+    // Prevent deletion of published categories by non-managers
+    if (category.status === 'PUBLISHED' && req.user.role !== 'reviewer') {
+      return res.status(403).json({ error: 'Cannot delete published categories. Contact manager.' });
+    }
+
+    // Allow deletion of DRAFT, PENDING_APPROVAL, REJECTED, and APPROVED (if creator or manager)
+
+    await TaskCategory.findByIdAndDelete(id);
 
     return res.status(200).json({ message: 'Category deleted successfully' });
   } catch (error) {
@@ -449,6 +573,49 @@ router.delete('/', async (req, res) => {
       error: 'Failed to delete category',
       details: error.message,
     });
+  }
+});
+
+// POST - Submit category for approval (Writer and Manager)
+router.post('/submit/:id', authenticate, allowRoles('writer', 'reviewer'), async (req, res) => {
+  try {
+    let { id } = req.params;
+    
+    if (id) id = id.trim();
+
+    // Validate ID format
+    const mongoose = require('mongoose');
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({ error: 'Invalid Category ID format' });
+    }
+
+    const category = await TaskCategory.findById(id);
+
+    if (!category) {
+      return res.status(404).json({ error: 'Category not found' });
+    }
+
+    // Check ownership - managers can submit any, writers only their own
+    if (req.user.role !== 'reviewer' && category.createdBy && category.createdBy.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+
+    // Only draft or rejected categories can be submitted
+    if (!['DRAFT', 'REJECTED'].includes(category.status)) {
+      return res.status(400).json({ error: 'Category cannot be submitted for approval' });
+    }
+
+    category.status = 'PENDING_APPROVAL';
+    category.reviewNotes = '';
+    await category.save();
+
+    return res.status(200).json({
+      message: 'Category submitted for approval',
+      category,
+    });
+  } catch (error) {
+    console.error('Error submitting category:', error);
+    return res.status(500).json({ error: 'Failed to submit category' });
   }
 });
 

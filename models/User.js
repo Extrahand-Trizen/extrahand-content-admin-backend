@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const crypto = require('crypto');
 
 const USER_STATUSES = ['PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED'];
-const USER_ROLES = ['user', 'admin'];
+const USER_ROLES = ['writer', 'reviewer'];
 
 const UserSchema = new mongoose.Schema(
   {
@@ -25,7 +25,7 @@ const UserSchema = new mongoose.Schema(
     role: {
       type: String,
       enum: USER_ROLES,
-      default: 'user',
+      default: 'writer',
     },
     status: {
       type: String,

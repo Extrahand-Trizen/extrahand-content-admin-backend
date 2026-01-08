@@ -12,6 +12,7 @@ const taskCategoriesRouter = require('./routes/task-categories');
 const taskSubcategoriesRouter = require('./routes/task-subcategories');
 const authRouter = require('./routes/auth');
 const articlesRouter = require('./routes/articles');
+const adminRouter = require('./routes/admin');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -37,6 +38,7 @@ app.use('/api/pages', pagesRouter);
 app.use('/api/task-categories', taskCategoriesRouter);
 app.use('/api/task-subcategories', taskSubcategoriesRouter);
 app.use('/api/articles', articlesRouter);
+app.use('/api/admin', adminRouter);
 
 // Health check route
 app.get('/health', (req, res) => {

@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 
+const SUBCATEGORY_STATUSES = ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'PUBLISHED'];
+
 const TaskSubcategorySchema = new mongoose.Schema(
   {
     name: {
@@ -18,6 +20,52 @@ const TaskSubcategorySchema = new mongoose.Schema(
       required: [true, 'Category slug is required'],
       trim: true,
       lowercase: true,
+    },
+    status: {
+      type: String,
+      enum: SUBCATEGORY_STATUSES,
+      default: 'DRAFT',
+    },
+    isPublished: {
+      type: Boolean,
+      default: false,
+    },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    reviewedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    reviewedAt: {
+      type: Date,
+      default: null,
+    },
+    reviewNotes: {
+      type: String,
+      default: '',
+    },
+    publishedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    publishedAt: {
+      type: Date,
+      default: null,
+    },
+    // Version control for edits
+    originalSubcategoryId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'TaskSubcategory',
+      default: null,
+    },
+    isCurrentVersion: {
+      type: Boolean,
+      default: true,
     },
     // Hero Section
     heroTitle: {
@@ -630,7 +678,7 @@ const TaskSubcategorySchema = new mongoose.Schema(
 );
 
 // Create indexes for faster queries
-TaskSubcategorySchema.index({ slug: 1 }, { unique: true });
+TaskSubcategorySchema.index({ slug: 1 }, { unique: true, partialFilterExpression: { isPublished: true } });
 TaskSubcategorySchema.index({ categorySlug: 1 });
 TaskSubcategorySchema.index({ isPublished: 1 });
 

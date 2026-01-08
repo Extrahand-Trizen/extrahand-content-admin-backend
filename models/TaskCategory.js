@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 
+const CATEGORY_STATUSES = ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'PUBLISHED'];
+
 const TaskCategorySchema = new mongoose.Schema(
   {
     name: {
@@ -12,6 +14,52 @@ const TaskCategorySchema = new mongoose.Schema(
       required: [true, 'Category slug is required'],
       trim: true,
       lowercase: true,
+    },
+    status: {
+      type: String,
+      enum: CATEGORY_STATUSES,
+      default: 'DRAFT',
+    },
+    isPublished: {
+      type: Boolean,
+      default: false,
+    },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    reviewedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    reviewedAt: {
+      type: Date,
+      default: null,
+    },
+    reviewNotes: {
+      type: String,
+      default: '',
+    },
+    publishedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    publishedAt: {
+      type: Date,
+      default: null,
+    },
+    // Version control for edits
+    originalCategoryId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'TaskCategory',
+      default: null,
+    },
+    isCurrentVersion: {
+      type: Boolean,
+      default: true,
     },
     subcategory: {
       type: String,
@@ -633,7 +681,7 @@ const TaskCategorySchema = new mongoose.Schema(
 );
 
 // Create indexes for faster queries
-TaskCategorySchema.index({ slug: 1 }, { unique: true });
+TaskCategorySchema.index({ slug: 1 }, { unique: true, partialFilterExpression: { isPublished: true } });
 TaskCategorySchema.index({ isPublished: 1 });
 
 module.exports = mongoose.model('TaskCategory', TaskCategorySchema);

@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 
+const ARTICLE_STATUSES = ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'PUBLISHED'];
+
 const ArticleSchema = new mongoose.Schema(
   {
     title: {
@@ -29,13 +31,55 @@ const ArticleSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    status: {
+      type: String,
+      enum: ARTICLE_STATUSES,
+      default: 'DRAFT',
+    },
     isPublished: {
       type: Boolean,
-      default: true,
+      default: false,
     },
     author: {
       type: String,
       default: 'ExtraHand Team',
+    },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    reviewedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    reviewedAt: {
+      type: Date,
+      default: null,
+    },
+    reviewNotes: {
+      type: String,
+      default: '',
+    },
+    publishedAt: {
+      type: Date,
+      default: null,
+    },
+    publishedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    // Version control for edits
+    originalArticleId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Article',
+      default: null,
+    },
+    isCurrentVersion: {
+      type: Boolean,
+      default: true,
     },
   },
   {
