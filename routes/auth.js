@@ -63,8 +63,8 @@ router.post(
         name,
         email,
         passwordHash,
-        role: 'user',
-        status: 'APPROVED',
+        role: 'writer', // New signups default to 'writer' role
+        status: 'PENDING', // New signups require approval from reviewer
         emailVerified: false, // Email verification required
       });
 
