@@ -12,11 +12,11 @@ router.get('/', async (req, res) => {
 
     if (slug) {
       let subcategory = await TaskSubcategory.findOne({ slug, isPublished: true });
-      
+
       if (!subcategory) {
         subcategory = await TaskSubcategory.findOne({ slug });
       }
-      
+
       if (!subcategory) {
         return res.status(404).json({ error: 'Subcategory not found' });
       }
@@ -43,7 +43,7 @@ router.post('/', authenticate, allowRoles('writer', 'reviewer'), async (req, res
   try {
     const body = req.body;
     const { imageFile, ...cleanBody } = body;
-    
+
     const { name, slug, categorySlug, heroTitle, heroDescription } = cleanBody;
 
     if (!name || !slug || !categorySlug || !heroTitle || !heroDescription) {
@@ -69,23 +69,23 @@ router.post('/', authenticate, allowRoles('writer', 'reviewer'), async (req, res
     const whyJoinFeatures = (cleanBody.whyJoinFeatures && Array.isArray(cleanBody.whyJoinFeatures) && cleanBody.whyJoinFeatures.length > 0)
       ? cleanBody.whyJoinFeatures
       : [
-          {
-            title: 'All on your terms',
-            description: "See a job that fits your skills and timeframe? Go for it. Extrahand's flexible to your schedule."
-          },
-          {
-            title: 'Get going for free',
-            description: 'Check tasks and get going straight away. Services fees occur when you\'ve completed the task.'
-          },
-          {
-            title: 'Secure payments',
-            description: 'Nobody likes chasing money, so we secure customer payments upfront. When a task is marked complete, your bank account will know about it.'
-          },
-          {
-            title: 'Skills can thrill',
-            description: 'Never thought your knack for crocheting would be useful? Think again. We\'re all about earning from unexpected skills at Extrahand.'
-          }
-        ];
+        {
+          title: 'All on your terms',
+          description: "See a job that fits your skills and timeframe? Go for it. Extrahand's flexible to your schedule."
+        },
+        {
+          title: 'Get going for free',
+          description: 'Check tasks and get going straight away. Services fees occur when you\'ve completed the task.'
+        },
+        {
+          title: 'Secure payments',
+          description: 'Nobody likes chasing money, so we secure customer payments upfront. When a task is marked complete, your bank account will know about it.'
+        },
+        {
+          title: 'Skills can thrill',
+          description: 'Never thought your knack for crocheting would be useful? Think again. We\'re all about earning from unexpected skills at Extrahand.'
+        }
+      ];
 
     let cleanedStaticTasks = [];
     if (cleanBody.staticTasks && Array.isArray(cleanBody.staticTasks)) {
@@ -229,7 +229,7 @@ router.post('/', authenticate, allowRoles('writer', 'reviewer'), async (req, res
 
     const subcategory = await TaskSubcategory.create(subcategoryData);
     const savedSubcategory = await TaskSubcategory.findById(subcategory._id).lean();
-    
+
     return res.status(201).json({
       message: 'Subcategory created successfully',
       subcategory: savedSubcategory,
@@ -249,12 +249,12 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer'), async (req, r
     const { id } = req.params; // Get ID from URL params instead of body
     const body = req.body;
     const { imageFile, ...updateData } = body;
-    
+
     if (updateData.footer && typeof updateData.footer === 'object') {
       const { appleStoreImageFile, googlePlayImageFile, ...cleanFooter } = updateData.footer;
       updateData.footer = cleanFooter;
     }
-    
+
     if (!id) {
       return res.status(400).json({ error: 'Subcategory ID is required' });
     }
@@ -285,7 +285,7 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer'), async (req, r
           return cleanTask;
         });
       }
-      
+
       if (updateData.topTaskers && Array.isArray(updateData.topTaskers)) {
         updateData.topTaskers = updateData.topTaskers.map(tasker => {
           const { profileImageFile, ...cleanTasker } = tasker;
@@ -300,7 +300,7 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer'), async (req, r
             existingDraft[key] = updateData[key];
           }
         });
-        
+
         // If it was rejected, move back to draft
         if (existingDraft.status === 'REJECTED') {
           existingDraft.status = 'DRAFT';
@@ -366,7 +366,7 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer'), async (req, r
         return cleanTask;
       });
     }
-    
+
     if (updateData.topTaskers && Array.isArray(updateData.topTaskers)) {
       updateData.topTaskers = updateData.topTaskers.map(tasker => {
         const { profileImageFile, ...cleanTasker } = tasker;
@@ -388,7 +388,7 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer'), async (req, r
     if (!subcategory) {
       return res.status(404).json({ error: 'Subcategory not found' });
     }
-    
+
     return res.status(200).json({
       message: 'Subcategory updated successfully',
       subcategory,
@@ -418,12 +418,12 @@ router.delete('/:id', authenticate, allowRoles('writer', 'reviewer'), async (req
     }
 
     // Check permissions: only creator or manager can delete
-    if (subcategory.createdBy && subcategory.createdBy.toString() !== req.user._id.toString() && req.user.role !== 'reviewer') {
+    if (subcategory.createdBy && subcategory.createdBy.toString() !== req.user._id.toString() && !['reviewer', 'manager'].includes(req.user.role)) {
       return res.status(403).json({ error: 'Not authorized to delete this subcategory' });
     }
 
     // Prevent deletion of published subcategories by non-managers
-    if (subcategory.status === 'PUBLISHED' && req.user.role !== 'reviewer') {
+    if (subcategory.status === 'PUBLISHED' && !['reviewer', 'manager'].includes(req.user.role)) {
       return res.status(403).json({ error: 'Cannot delete published subcategories. Contact manager.' });
     }
 
@@ -451,7 +451,7 @@ router.post('/submit/:id', authenticate, allowRoles('writer', 'reviewer'), async
     }
 
     // Check ownership - managers can submit any, writers only their own
-    if (req.user.role !== 'reviewer' && subcategory.createdBy && subcategory.createdBy.toString() !== req.user._id.toString()) {
+    if (!['reviewer', 'manager'].includes(req.user.role) && subcategory.createdBy && subcategory.createdBy.toString() !== req.user._id.toString()) {
       return res.status(403).json({ error: 'Not authorized' });
     }
 
