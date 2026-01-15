@@ -8,6 +8,7 @@ const TaskCategorySchema = new mongoose.Schema(
       type: String,
       required: [true, 'Category name is required'],
       trim: true,
+      unique: true,
     },
     slug: {
       type: String,
@@ -39,6 +40,10 @@ const TaskCategorySchema = new mongoose.Schema(
       default: null,
     },
     reviewNotes: {
+      type: String,
+      default: '',
+    },
+    submissionNotes: {
       type: String,
       default: '',
     },

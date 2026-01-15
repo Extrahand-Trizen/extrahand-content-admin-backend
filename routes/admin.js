@@ -18,7 +18,7 @@ const SALT_ROUNDS = parseInt(process.env.BCRYPT_SALT_ROUNDS) || 12;
 router.get('/articles/pending', authenticate, allowRoles('reviewer', 'writer'), async (req, res) => {
   try {
     let filter = {};
-    
+
     // Writers only see their own pending articles and drafts
     if (req.user.role === 'writer') {
       filter.createdBy = req.user._id;
@@ -27,13 +27,13 @@ router.get('/articles/pending', authenticate, allowRoles('reviewer', 'writer'), 
       // Reviewers only see articles that are actually pending approval (submitted by writers)
       // They don't need to see drafts unless they are their own (which handles differently usually)
       // But for the "Pending Approval" queue, it should strictly be PENDING_APPROVAL
-      filter.status = 'PENDING_APPROVAL'; 
+      filter.status = 'PENDING_APPROVAL';
     }
-    
+
     const articles = await Article.find(filter)
       .populate('createdBy', 'name email role')
       .sort({ createdAt: -1 });
-    
+
     return res.status(200).json(articles);
   } catch (error) {
     console.error('Error fetching pending articles:', error);
@@ -46,13 +46,13 @@ router.get('/articles/all', authenticate, allowRoles('reviewer', 'writer'), asyn
   try {
     const { status } = req.query;
     let filter = {};
-    
+
     // Writers only see their own articles
     if (req.user.role === 'writer') {
       filter.createdBy = req.user._id;
     }
     // Reviewers see all articles
-    
+
     if (status) {
       filter.status = status;
     }
@@ -62,7 +62,7 @@ router.get('/articles/all', authenticate, allowRoles('reviewer', 'writer'), asyn
       .populate('reviewedBy', 'name email')
       .populate('publishedBy', 'name email')
       .sort({ createdAt: -1 });
-    
+
     return res.status(200).json(articles);
   } catch (error) {
     console.error('Error fetching all articles:', error);
@@ -71,13 +71,13 @@ router.get('/articles/all', authenticate, allowRoles('reviewer', 'writer'), asyn
 });
 
 // POST - Approve article (Reviewer only)
-router.post('/articles/:id/approve', authenticate, allowRoles('reviewer'), async (req, res) => {
+router.post('/articles/:id/approve', authenticate, allowRoles('reviewer', 'manager'), async (req, res) => {
   try {
     const { id } = req.params;
     const { reviewNotes } = req.body;
 
     const article = await Article.findById(id);
-    
+
     if (!article) {
       return res.status(404).json({ error: 'Article not found' });
     }
@@ -91,7 +91,7 @@ router.post('/articles/:id/approve', authenticate, allowRoles('reviewer'), async
     article.reviewedBy = req.user._id;
     article.reviewedAt = new Date();
     article.reviewNotes = reviewNotes || '';
-    
+
     await article.save();
 
     return res.status(200).json({
@@ -111,7 +111,7 @@ router.post('/articles/:id/reject', authenticate, allowRoles('reviewer'), async 
     const { reviewNotes } = req.body;
 
     const article = await Article.findById(id);
-    
+
     if (!article) {
       return res.status(404).json({ error: 'Article not found' });
     }
@@ -125,7 +125,7 @@ router.post('/articles/:id/reject', authenticate, allowRoles('reviewer'), async 
     article.reviewedBy = req.user._id;
     article.reviewedAt = new Date();
     article.reviewNotes = reviewNotes || '';
-    
+
     await article.save();
 
     return res.status(200).json({
@@ -139,12 +139,12 @@ router.post('/articles/:id/reject', authenticate, allowRoles('reviewer'), async 
 });
 
 // POST - Publish approved article (Reviewer only)
-router.post('/articles/:id/publish', authenticate, allowRoles('reviewer'), async (req, res) => {
+router.post('/articles/:id/publish', authenticate, allowRoles('reviewer', 'manager'), async (req, res) => {
   try {
     const { id } = req.params;
 
     const article = await Article.findById(id);
-    
+
     if (!article) {
       return res.status(404).json({ error: 'Article not found' });
     }
@@ -156,7 +156,7 @@ router.post('/articles/:id/publish', authenticate, allowRoles('reviewer'), async
     // If this is a new version (has originalArticleId), replace the old published version
     if (article.originalArticleId) {
       const originalArticle = await Article.findById(article.originalArticleId);
-      
+
       if (originalArticle && originalArticle.status === 'PUBLISHED') {
         // Mark old version as not current and unpublish it
         originalArticle.isCurrentVersion = false;
@@ -172,7 +172,7 @@ router.post('/articles/:id/publish', authenticate, allowRoles('reviewer'), async
     article.isCurrentVersion = true;
     article.publishedBy = req.user._id;
     article.publishedAt = new Date();
-    
+
     await article.save();
 
     return res.status(200).json({
@@ -191,14 +191,14 @@ router.post('/articles/:id/unpublish', authenticate, allowRoles('reviewer'), asy
     const { id } = req.params;
 
     const article = await Article.findById(id);
-    
+
     if (!article) {
       return res.status(404).json({ error: 'Article not found' });
     }
 
     article.isPublished = false;
     article.status = 'APPROVED'; // Keep as approved but unpublished
-    
+
     await article.save();
 
     return res.status(200).json({
@@ -221,7 +221,7 @@ router.get('/users', authenticate, allowRoles('reviewer'), async (req, res) => {
     const users = await User.find({})
       .select('-passwordHash')
       .sort({ createdAt: -1 });
-    
+
     return res.status(200).json(users);
   } catch (error) {
     console.error('Error fetching users:', error);
@@ -233,14 +233,25 @@ router.get('/users', authenticate, allowRoles('reviewer'), async (req, res) => {
 router.put('/users/:id/role', authenticate, allowRoles('reviewer'), async (req, res) => {
   try {
     const { id } = req.params;
-    const { role } = req.body;
+    let { role } = req.body;
+
+    // Normalize role to lowercase for consistency
+    role = role.toLowerCase();
 
     if (!['writer', 'reviewer'].includes(role)) {
       return res.status(400).json({ error: 'Invalid role' });
     }
 
+    // Single Reviewer Constraint: Check if a reviewer already exists
+    if (role === 'reviewer') {
+      const existingReviewer = await User.findOne({ role: 'reviewer', _id: { $ne: id } });
+      if (existingReviewer) {
+        return res.status(400).json({ error: 'A reviewer already exists. Only one reviewer is allowed in the system.' });
+      }
+    }
+
     const user = await User.findById(id);
-    
+
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -274,7 +285,7 @@ router.put('/users/:id/status', authenticate, allowRoles('reviewer'), async (req
     }
 
     const user = await User.findById(id);
-    
+
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -312,7 +323,7 @@ router.delete('/users/:id', authenticate, allowRoles('reviewer'), async (req, re
     }
 
     const user = await User.findByIdAndDelete(id);
-    
+
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -336,6 +347,14 @@ router.post('/users', authenticate, allowRoles('reviewer'), async (req, res) => 
 
     if (!['writer', 'reviewer'].includes(role)) {
       return res.status(400).json({ error: 'Invalid role' });
+    }
+
+    // Single Reviewer Constraint: Check if a reviewer already exists
+    if (role === 'reviewer') {
+      const existingReviewer = await User.findOne({ role: 'reviewer' });
+      if (existingReviewer) {
+        return res.status(400).json({ error: 'A reviewer already exists. Only one reviewer is allowed in the system.' });
+      }
     }
 
     // Check if user exists
@@ -382,14 +401,14 @@ router.get('/dashboard/stats', authenticate, allowRoles('reviewer', 'writer'), a
   try {
     let articleFilter = {};
     let categoryFilter = {};
-    
+
     // Writers only see their own content stats
     if (req.user.role === 'writer') {
       articleFilter.createdBy = req.user._id;
       categoryFilter.createdBy = req.user._id;
     }
-    // Reviewers see all content stats
-    
+    // Reviewers see all content stats 
+
     const [
       totalArticles,
       pendingArticles,
@@ -404,6 +423,11 @@ router.get('/dashboard/stats', authenticate, allowRoles('reviewer', 'writer'), a
       approvedCategories,
       publishedCategories,
       rejectedCategories,
+      totalSubcategories,
+      pendingSubcategories,
+      approvedSubcategories,
+      publishedSubcategories,
+      rejectedSubcategories,
     ] = await Promise.all([
       Article.countDocuments(articleFilter),
       Article.countDocuments({ ...articleFilter, status: 'PENDING_APPROVAL' }),
@@ -418,6 +442,11 @@ router.get('/dashboard/stats', authenticate, allowRoles('reviewer', 'writer'), a
       TaskCategory.countDocuments({ ...categoryFilter, status: 'APPROVED' }),
       TaskCategory.countDocuments({ ...categoryFilter, status: 'PUBLISHED' }),
       TaskCategory.countDocuments({ ...categoryFilter, status: 'REJECTED' }),
+      TaskSubcategory.countDocuments(categoryFilter), // Reuse categoryFilter as it's the same logic
+      TaskSubcategory.countDocuments({ ...categoryFilter, status: 'PENDING_APPROVAL' }),
+      TaskSubcategory.countDocuments({ ...categoryFilter, status: 'APPROVED' }),
+      TaskSubcategory.countDocuments({ ...categoryFilter, status: 'PUBLISHED' }),
+      TaskSubcategory.countDocuments({ ...categoryFilter, status: 'REJECTED' }),
     ]);
 
     return res.status(200).json({
@@ -434,6 +463,13 @@ router.get('/dashboard/stats', authenticate, allowRoles('reviewer', 'writer'), a
         approved: approvedCategories,
         published: publishedCategories,
         rejected: rejectedCategories,
+      },
+      subcategories: {
+        total: totalSubcategories,
+        pending: pendingSubcategories,
+        approved: approvedSubcategories,
+        published: publishedSubcategories,
+        rejected: rejectedSubcategories,
       },
       users: {
         total: totalUsers,
@@ -476,14 +512,14 @@ router.get('/dashboard/activity', authenticate, allowRoles('reviewer'), async (r
 // ============================================
 
 // GET - Get all pending categories
-router.get('/categories/pending', authenticate, allowRoles('reviewer'), async (req, res) => {
+router.get('/categories/pending', authenticate, allowRoles('reviewer', 'manager'), async (req, res) => {
   try {
     // Only show PENDING_APPROVAL categories for Reviewer review
     // Drafts should not be visible until submitted
     const categories = await TaskCategory.find({ status: 'PENDING_APPROVAL' })
       .populate('createdBy', 'name email role')
       .sort({ createdAt: -1 });
-    
+
     return res.status(200).json(categories);
   } catch (error) {
     console.error('Error fetching pending categories:', error);
@@ -492,11 +528,11 @@ router.get('/categories/pending', authenticate, allowRoles('reviewer'), async (r
 });
 
 // GET - Get all categories
-router.get('/categories/all', authenticate, allowRoles('reviewer'), async (req, res) => {
+router.get('/categories/all', authenticate, allowRoles('reviewer', 'manager'), async (req, res) => {
   try {
     const { status } = req.query;
     const filter = {};
-    
+
     if (status) {
       filter.status = status;
     }
@@ -506,7 +542,7 @@ router.get('/categories/all', authenticate, allowRoles('reviewer'), async (req, 
       .populate('reviewedBy', 'name email')
       .populate('publishedBy', 'name email')
       .sort({ createdAt: -1 });
-    
+
     return res.status(200).json(categories);
   } catch (error) {
     console.error('Error fetching categories:', error);
@@ -515,13 +551,13 @@ router.get('/categories/all', authenticate, allowRoles('reviewer'), async (req, 
 });
 
 // POST - Approve category
-router.post('/categories/:id/approve', authenticate, allowRoles('reviewer'), async (req, res) => {
+router.post('/categories/:id/approve', authenticate, allowRoles('reviewer', 'manager'), async (req, res) => {
   try {
     const { id } = req.params;
     const { reviewNotes } = req.body;
 
     const category = await TaskCategory.findById(id);
-    
+
     if (!category) {
       return res.status(404).json({ error: 'Category not found' });
     }
@@ -531,32 +567,31 @@ router.post('/categories/:id/approve', authenticate, allowRoles('reviewer'), asy
       return res.status(400).json({ error: 'Category cannot be approved. Current status: ' + category.status });
     }
 
-    // Handle Edit Workflow: If this is an update to an existing category
-    if (category.originalCategoryId) {
-      const originalCategory = await TaskCategory.findById(category.originalCategoryId);
-      
-      if (originalCategory) {
-        // If original was valid, we replace it with this new approved version
-        // We delete the old one permanently as requested
-        await TaskCategory.findByIdAndDelete(category.originalCategoryId);
-        
-        // If the original was PUBLISHED, we want to maintain continuity? 
-        // The user request says "old category will be removed permanently".
-        // It's safer to leave this one as APPROVED and let Reviewer Publish it explicitly, 
-        // UNLESS the user implies auto-replace. 
-        // Given "approve the edited category... old... removed", I will separate the concerns slightly 
-        // but ensure this one becomes the "Main" copy.
-        
-        category.originalCategoryId = null; // No longer a child
-        category.isCurrentVersion = true;
-      }
-    }
+    // Unified Cross-Collection Deduplication: Remove any other category/subcategory with the same slug
+    const duplicateCriteria = {
+      slug: category.slug,
+      _id: { $ne: category._id }
+    };
 
-    category.status = 'APPROVED';
+    // Delete from both collections to ensure absolute uniqueness by slug
+    // We do this regardless of hasDuplicateBySlug for simplicity
+    await Promise.all([
+      TaskCategory.deleteMany(duplicateCriteria),
+      TaskSubcategory.deleteMany({ slug: category.slug }) // Subcategories will never have the same _id anyway
+    ]);
+
+    // Update status - since we've cleared any same-slug version, this IS the current version
+    category.status = 'PUBLISHED';
+    category.isPublished = true;
+    category.isCurrentVersion = true;
+    category.publishedBy = req.user._id;
+    category.publishedAt = new Date();
+    category.originalCategoryId = null; // Clear the link
+
     category.reviewedBy = req.user._id;
     category.reviewedAt = new Date();
     category.reviewNotes = reviewNotes || '';
-    
+
     await category.save();
 
     return res.status(200).json({
@@ -575,7 +610,7 @@ router.post('/categories/:id/reject', authenticate, allowRoles('reviewer'), asyn
     const { reviewNotes } = req.body;
 
     const category = await TaskCategory.findById(id);
-    
+
     if (!category) {
       return res.status(404).json({ error: 'Category not found' });
     }
@@ -589,7 +624,7 @@ router.post('/categories/:id/reject', authenticate, allowRoles('reviewer'), asyn
     category.reviewedBy = req.user._id;
     category.reviewedAt = new Date();
     category.reviewNotes = reviewNotes || '';
-    
+
     await category.save();
 
     return res.status(200).json({
@@ -603,12 +638,12 @@ router.post('/categories/:id/reject', authenticate, allowRoles('reviewer'), asyn
 });
 
 // POST - Publish category
-router.post('/categories/:id/publish', authenticate, allowRoles('reviewer'), async (req, res) => {
+router.post('/categories/:id/publish', authenticate, allowRoles('reviewer', 'manager'), async (req, res) => {
   try {
     const { id } = req.params;
 
     const category = await TaskCategory.findById(id);
-    
+
     if (!category) {
       return res.status(404).json({ error: 'Category not found' });
     }
@@ -617,18 +652,15 @@ router.post('/categories/:id/publish', authenticate, allowRoles('reviewer'), asy
       return res.status(400).json({ error: 'Category must be approved before publishing' });
     }
 
-    // If this is a new version (has originalCategoryId), replace the old published version
-    if (category.originalCategoryId) {
-      const originalCategory = await TaskCategory.findById(category.originalCategoryId);
-      
-      if (originalCategory && originalCategory.status === 'PUBLISHED') {
-        // Mark old version as not current and unpublish it
-        originalCategory.isCurrentVersion = false;
-        originalCategory.isPublished = false;
-        originalCategory.status = 'DRAFT'; // Archive the old version
-        await originalCategory.save();
-      }
-    }
+    // Unified Cross-Collection Deduplication
+    await Promise.all([
+      TaskCategory.deleteMany({
+        slug: category.slug,
+        _id: { $ne: category._id }
+      }),
+      TaskSubcategory.deleteMany({ slug: category.slug })
+    ]);
+    category.originalCategoryId = null;
 
     // Publish the new version
     category.status = 'PUBLISHED';
@@ -636,7 +668,7 @@ router.post('/categories/:id/publish', authenticate, allowRoles('reviewer'), asy
     category.isCurrentVersion = true;
     category.publishedBy = req.user._id;
     category.publishedAt = new Date();
-    
+
     await category.save();
 
     return res.status(200).json({
@@ -655,14 +687,14 @@ router.post('/categories/:id/unpublish', authenticate, allowRoles('reviewer'), a
     const { id } = req.params;
 
     const category = await TaskCategory.findById(id);
-    
+
     if (!category) {
       return res.status(404).json({ error: 'Category not found' });
     }
 
     category.isPublished = false;
     category.status = 'APPROVED';
-    
+
     await category.save();
 
     return res.status(200).json({
@@ -679,14 +711,52 @@ router.post('/categories/:id/unpublish', authenticate, allowRoles('reviewer'), a
 // SUBCATEGORY APPROVAL SYSTEM (Reviewer only)
 // ============================================
 
+// GET - Get all pending subcategories
+router.get('/subcategories/pending', authenticate, allowRoles('reviewer', 'manager'), async (req, res) => {
+  try {
+    const subcategories = await TaskSubcategory.find({ status: 'PENDING_APPROVAL' })
+      .populate('createdBy', 'name email role')
+      .populate('categorySlug') // Optional: might fail if not reffed but usually just string
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json(subcategories);
+  } catch (error) {
+    console.error('Error fetching pending subcategories:', error);
+    return res.status(500).json({ error: 'Failed to fetch pending subcategories' });
+  }
+});
+
+// GET - Get all subcategories
+router.get('/subcategories/all', authenticate, allowRoles('reviewer', 'manager'), async (req, res) => {
+  try {
+    const { status } = req.query;
+    const filter = {};
+
+    if (status) {
+      filter.status = status;
+    }
+
+    const subcategories = await TaskSubcategory.find(filter)
+      .populate('createdBy', 'name email role')
+      .populate('reviewedBy', 'name email')
+      .populate('publishedBy', 'name email')
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json(subcategories);
+  } catch (error) {
+    console.error('Error fetching subcategories:', error);
+    return res.status(500).json({ error: 'Failed to fetch subcategories' });
+  }
+});
+
 // POST - Approve subcategory
-router.post('/subcategories/:id/approve', authenticate, allowRoles('reviewer'), async (req, res) => {
+router.post('/subcategories/:id/approve', authenticate, allowRoles('reviewer', 'manager'), async (req, res) => {
   try {
     const { id } = req.params;
     const { reviewNotes } = req.body;
 
     const subcategory = await TaskSubcategory.findById(id);
-    
+
     if (!subcategory) {
       return res.status(404).json({ error: 'Subcategory not found' });
     }
@@ -696,24 +766,30 @@ router.post('/subcategories/:id/approve', authenticate, allowRoles('reviewer'), 
       return res.status(400).json({ error: 'Subcategory cannot be approved. Current status: ' + subcategory.status });
     }
 
-    // Handle Edit Workflow: If this is an update to an existing subcategory
-    if (subcategory.originalSubcategoryId) {
-      const originalSubcategory = await TaskSubcategory.findById(subcategory.originalSubcategoryId);
-      
-      if (originalSubcategory) {
-        // Delete the old one permanently as requested
-        await TaskSubcategory.findByIdAndDelete(subcategory.originalSubcategoryId);
-        
-        subcategory.originalSubcategoryId = null; // No longer a child
-        subcategory.isCurrentVersion = true;
-      }
-    }
+    // Unified Cross-Collection Deduplication for Subcategories
+    const duplicateCriteria = {
+      slug: subcategory.slug,
+      _id: { $ne: subcategory._id }
+    };
 
-    subcategory.status = 'APPROVED';
+    // Delete from both collections
+    await Promise.all([
+      TaskSubcategory.deleteMany(duplicateCriteria),
+      TaskCategory.deleteMany({ slug: subcategory.slug })
+    ]);
+
+    // Update status to PUBLISHED
+    subcategory.status = 'PUBLISHED';
+    subcategory.isPublished = true;
+    subcategory.isCurrentVersion = true;
+    subcategory.publishedBy = req.user._id;
+    subcategory.publishedAt = new Date();
+    subcategory.originalSubcategoryId = null;
+
     subcategory.reviewedBy = req.user._id;
     subcategory.reviewedAt = new Date();
     subcategory.reviewNotes = reviewNotes || '';
-    
+
     await subcategory.save();
 
     return res.status(200).json({
@@ -727,13 +803,13 @@ router.post('/subcategories/:id/approve', authenticate, allowRoles('reviewer'), 
 });
 
 // POST - Reject subcategory
-router.post('/subcategories/:id/reject', authenticate, allowRoles('reviewer'), async (req, res) => {
+router.post('/subcategories/:id/reject', authenticate, allowRoles('reviewer', 'manager'), async (req, res) => {
   try {
     const { id } = req.params;
     const { reviewNotes } = req.body;
 
     const subcategory = await TaskSubcategory.findById(id);
-    
+
     if (!subcategory) {
       return res.status(404).json({ error: 'Subcategory not found' });
     }
@@ -747,7 +823,7 @@ router.post('/subcategories/:id/reject', authenticate, allowRoles('reviewer'), a
     subcategory.reviewedBy = req.user._id;
     subcategory.reviewedAt = new Date();
     subcategory.reviewNotes = reviewNotes || '';
-    
+
     await subcategory.save();
 
     return res.status(200).json({
@@ -761,12 +837,12 @@ router.post('/subcategories/:id/reject', authenticate, allowRoles('reviewer'), a
 });
 
 // POST - Publish subcategory
-router.post('/subcategories/:id/publish', authenticate, allowRoles('reviewer'), async (req, res) => {
+router.post('/subcategories/:id/publish', authenticate, allowRoles('reviewer', 'manager'), async (req, res) => {
   try {
     const { id } = req.params;
 
     const subcategory = await TaskSubcategory.findById(id);
-    
+
     if (!subcategory) {
       return res.status(404).json({ error: 'Subcategory not found' });
     }
@@ -775,18 +851,12 @@ router.post('/subcategories/:id/publish', authenticate, allowRoles('reviewer'), 
       return res.status(400).json({ error: 'Subcategory must be approved before publishing' });
     }
 
-    // If this is a new version (has originalSubcategoryId), replace the old published version
-    if (subcategory.originalSubcategoryId) {
-      const originalSubcategory = await TaskSubcategory.findById(subcategory.originalSubcategoryId);
-      
-      if (originalSubcategory && originalSubcategory.status === 'PUBLISHED') {
-        // Mark old version as not current and unpublish it
-        originalSubcategory.isCurrentVersion = false;
-        originalSubcategory.isPublished = false;
-        originalSubcategory.status = 'DRAFT'; // Archive the old version
-        await originalSubcategory.save();
-      }
-    }
+    // Unified Deduplication for Subcategories
+    await TaskSubcategory.deleteMany({
+      slug: subcategory.slug,
+      _id: { $ne: subcategory._id }
+    });
+    subcategory.originalSubcategoryId = null;
 
     // Publish the new version
     subcategory.status = 'PUBLISHED';
@@ -794,7 +864,7 @@ router.post('/subcategories/:id/publish', authenticate, allowRoles('reviewer'), 
     subcategory.isCurrentVersion = true;
     subcategory.publishedBy = req.user._id;
     subcategory.publishedAt = new Date();
-    
+
     await subcategory.save();
 
     return res.status(200).json({
@@ -808,19 +878,19 @@ router.post('/subcategories/:id/publish', authenticate, allowRoles('reviewer'), 
 });
 
 // POST - Unpublish subcategory
-router.post('/subcategories/:id/unpublish', authenticate, allowRoles('reviewer'), async (req, res) => {
+router.post('/subcategories/:id/unpublish', authenticate, allowRoles('reviewer', 'manager'), async (req, res) => {
   try {
     const { id } = req.params;
 
     const subcategory = await TaskSubcategory.findById(id);
-    
+
     if (!subcategory) {
       return res.status(404).json({ error: 'Subcategory not found' });
     }
 
     subcategory.isPublished = false;
     subcategory.status = 'APPROVED';
-    
+
     await subcategory.save();
 
     return res.status(200).json({

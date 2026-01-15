@@ -11,46 +11,43 @@ router.get('/', async (req, res) => {
     const { slug } = req.query;
 
     if (slug) {
-      // Check if slug contains '/' which indicates it's a subcategory
-      if (slug.includes('/')) {
-        // This is a subcategory slug (format: "category-slug/subcategory-slug")
-        let subcategory = await TaskSubcategory.findOne({ slug, isPublished: true });
-        
-        if (!subcategory) {
-          subcategory = await TaskSubcategory.findOne({ slug });
-        }
-        
-        if (!subcategory) {
-          return res.status(404).json({ error: 'Subcategory not found' });
-        }
-        
+      // 1. Try to find in TaskCategory first
+      let item = await TaskCategory.findOne({ slug, isPublished: true });
+      if (!item) {
+        item = await TaskCategory.findOne({ slug });
+      }
+
+      if (item) {
+        return res.status(200).json(item);
+      }
+
+      // 2. Try to find in TaskSubcategory if not found in TaskCategory
+      let subcategory = await TaskSubcategory.findOne({ slug, isPublished: true });
+      if (!subcategory) {
+        subcategory = await TaskSubcategory.findOne({ slug });
+      }
+
+      if (subcategory) {
         // Fetch parent category to get its name
         let parentCategory = null;
         if (subcategory.categorySlug) {
           parentCategory = await TaskCategory.findOne({ slug: subcategory.categorySlug });
         }
-        
+
         const subcategoryObj = subcategory.toObject();
         if (parentCategory) {
           subcategoryObj.categoryName = parentCategory.name;
         } else {
           subcategoryObj.categoryName = subcategory.name;
         }
-        
+
+        // Add type for frontend if needed, but the user wants "no differentiation"
+        // subcategoryObj.type = 'Subcategory'; 
+
         return res.status(200).json(subcategoryObj);
-      } else {
-        // This is a category slug
-        let category = await TaskCategory.findOne({ slug, isPublished: true });
-        
-        if (!category) {
-          category = await TaskCategory.findOne({ slug });
-        }
-        
-        if (!category) {
-          return res.status(404).json({ error: 'Category not found' });
-        }
-        return res.status(200).json(category);
       }
+
+      return res.status(404).json({ error: 'Item not found' });
     }
 
     // Fetch all categories (for admin)
@@ -68,18 +65,25 @@ router.get('/', async (req, res) => {
 router.post('/', authenticate, allowRoles('writer', 'reviewer'), async (req, res) => {
   try {
     const body = req.body;
-    
+
     console.log('=== RECEIVED IN API ===');
     console.log('staticTasks in body:', body.staticTasks);
     console.log('staticTasks length:', body.staticTasks?.length);
-    
+
     const { imageFile, ...cleanBody } = body;
-    
+
     const { name, slug, heroTitle, heroDescription } = cleanBody;
 
     if (!name || !slug || !heroTitle || !heroDescription) {
       return res.status(400).json({
         error: 'Name, slug, heroTitle, and heroDescription are required',
+      });
+    }
+
+    const existingName = await TaskCategory.findOne({ name });
+    if (existingName) {
+      return res.status(409).json({
+        error: 'A category with this name already exists',
       });
     }
 
@@ -93,23 +97,23 @@ router.post('/', authenticate, allowRoles('writer', 'reviewer'), async (req, res
     const whyJoinFeatures = (cleanBody.whyJoinFeatures && Array.isArray(cleanBody.whyJoinFeatures) && cleanBody.whyJoinFeatures.length > 0)
       ? cleanBody.whyJoinFeatures
       : [
-          {
-            title: 'All on your terms',
-            description: "See a job that fits your skills and timeframe? Go for it. Extrahand's flexible to your schedule."
-          },
-          {
-            title: 'Get going for free',
-            description: 'Check tasks and get going straight away. Services fees occur when you\'ve completed the task.'
-          },
-          {
-            title: 'Secure payments',
-            description: 'Nobody likes chasing money, so we secure customer payments upfront. When a task is marked complete, your bank account will know about it.'
-          },
-          {
-            title: 'Skills can thrill',
-            description: 'Never thought your knack for crocheting would be useful? Think again. We\'re all about earning from unexpected skills at Extrahand.'
-          }
-        ];
+        {
+          title: 'All on your terms',
+          description: "See a job that fits your skills and timeframe? Go for it. Extrahand's flexible to your schedule."
+        },
+        {
+          title: 'Get going for free',
+          description: 'Check tasks and get going straight away. Services fees occur when you\'ve completed the task.'
+        },
+        {
+          title: 'Secure payments',
+          description: 'Nobody likes chasing money, so we secure customer payments upfront. When a task is marked complete, your bank account will know about it.'
+        },
+        {
+          title: 'Skills can thrill',
+          description: 'Never thought your knack for crocheting would be useful? Think again. We\'re all about earning from unexpected skills at Extrahand.'
+        }
+      ];
 
     let cleanedStaticTasks = [];
     if (cleanBody.staticTasks && Array.isArray(cleanBody.staticTasks)) {
@@ -151,18 +155,18 @@ router.post('/', authenticate, allowRoles('writer', 'reviewer'), async (req, res
       whyJoinTitle: cleanBody.whyJoinTitle || 'Why join Extrahand',
       whyJoinFeatures: whyJoinFeatures,
       whyJoinButtonText: cleanBody.whyJoinButtonText || 'Join Extrahand',
-      staticTasksSectionTitle: (cleanBody.staticTasksSectionTitle !== undefined && cleanBody.staticTasksSectionTitle !== null && cleanBody.staticTasksSectionTitle !== '') 
-        ? cleanBody.staticTasksSectionTitle 
+      staticTasksSectionTitle: (cleanBody.staticTasksSectionTitle !== undefined && cleanBody.staticTasksSectionTitle !== null && cleanBody.staticTasksSectionTitle !== '')
+        ? cleanBody.staticTasksSectionTitle
         : (cleanBody.name ? `${cleanBody.name} tasks in India` : ''),
-      staticTasksSectionDescription: (cleanBody.staticTasksSectionDescription !== undefined && cleanBody.staticTasksSectionDescription !== null && cleanBody.staticTasksSectionDescription !== '') 
-        ? cleanBody.staticTasksSectionDescription 
+      staticTasksSectionDescription: (cleanBody.staticTasksSectionDescription !== undefined && cleanBody.staticTasksSectionDescription !== null && cleanBody.staticTasksSectionDescription !== '')
+        ? cleanBody.staticTasksSectionDescription
         : 'Check out what tasks people want done near you right now...',
       staticTasks: Array.isArray(cleanedStaticTasks) ? cleanedStaticTasks : [],
-      browseAllTasksButtonText: (cleanBody.browseAllTasksButtonText !== undefined && cleanBody.browseAllTasksButtonText !== null && cleanBody.browseAllTasksButtonText !== '') 
-        ? cleanBody.browseAllTasksButtonText 
+      browseAllTasksButtonText: (cleanBody.browseAllTasksButtonText !== undefined && cleanBody.browseAllTasksButtonText !== null && cleanBody.browseAllTasksButtonText !== '')
+        ? cleanBody.browseAllTasksButtonText
         : 'Browse all tasks',
-      lastUpdatedText: (cleanBody.lastUpdatedText !== undefined && cleanBody.lastUpdatedText !== null && cleanBody.lastUpdatedText !== '') 
-        ? cleanBody.lastUpdatedText 
+      lastUpdatedText: (cleanBody.lastUpdatedText !== undefined && cleanBody.lastUpdatedText !== null && cleanBody.lastUpdatedText !== '')
+        ? cleanBody.lastUpdatedText
         : 'Last updated on 4th Dec 2025',
       earningPotentialTitle: cleanBody.earningPotentialTitle || 'Discover your earning potential in India',
       earningPotentialDescription: cleanBody.earningPotentialDescription || 'Earn money with every accounting task',
@@ -217,21 +221,21 @@ router.post('/', authenticate, allowRoles('writer', 'reviewer'), async (req, res
         }
         return [];
       })(),
-      insuranceCoverTitle: cleanBody.insuranceCoverTitle !== undefined && cleanBody.insuranceCoverTitle !== null && cleanBody.insuranceCoverTitle !== "" 
-        ? cleanBody.insuranceCoverTitle 
+      insuranceCoverTitle: cleanBody.insuranceCoverTitle !== undefined && cleanBody.insuranceCoverTitle !== null && cleanBody.insuranceCoverTitle !== ""
+        ? cleanBody.insuranceCoverTitle
         : "We've got you covered",
       insuranceCoverDescription: cleanBody.insuranceCoverDescription !== undefined && cleanBody.insuranceCoverDescription !== null && cleanBody.insuranceCoverDescription !== ""
-        ? cleanBody.insuranceCoverDescription 
+        ? cleanBody.insuranceCoverDescription
         : "Whether you're a posting a task or completing a task, you can do both with the peace of mind that Extrahand is there to support.",
       insuranceCoverButtonText: cleanBody.insuranceCoverButtonText !== undefined && cleanBody.insuranceCoverButtonText !== null && cleanBody.insuranceCoverButtonText !== ""
-        ? cleanBody.insuranceCoverButtonText 
+        ? cleanBody.insuranceCoverButtonText
         : "Extrahand's insurance cover",
       insuranceCoverFeatures: (() => {
         if (cleanBody.insuranceCoverFeatures && Array.isArray(cleanBody.insuranceCoverFeatures) && cleanBody.insuranceCoverFeatures.length === 2) {
           return cleanBody.insuranceCoverFeatures.map((feature, index) => ({
             icon: index === 0 ? "human" : "star",
             subtitle: feature.subtitle || (index === 0 ? "Public liability insurance" : "Top rated insurance"),
-            subdescription: feature.subdescription || (index === 0 
+            subdescription: feature.subdescription || (index === 0
               ? "Extrahand Insurance covers you for any accidental injury to the customer or property damage whilst performing certain task activities"
               : "Extrahand Insurance is provided by Chubb Insurance India Limited, one of the world's most reputable, stable and innovative"),
           }));
@@ -354,10 +358,10 @@ router.post('/', authenticate, allowRoles('writer', 'reviewer'), async (req, res
 
     const category = await TaskCategory.create(categoryData);
     const savedCategory = await TaskCategory.findById(category._id).lean();
-    
+
     return res.status(201).json({
-      message: req.user.role === 'reviewer' 
-        ? 'Category created and approved. You can now publish it.' 
+      message: req.user.role === 'reviewer'
+        ? 'Category created and approved. You can now publish it.'
         : 'Category saved as draft. Submit for approval when ready.',
       category: savedCategory,
     });
@@ -376,7 +380,7 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer'), async (req, r
     const { id } = req.params; // Get ID from URL params instead of body
     const body = req.body;
     const { imageFile, ...updateData } = body;
-    
+
     if (updateData.footer && typeof updateData.footer === 'object') {
       const { appleStoreImageFile, googlePlayImageFile, ...cleanFooter } = updateData.footer;
       updateData.footer = cleanFooter;
@@ -412,7 +416,7 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer'), async (req, r
           return cleanTask;
         });
       }
-      
+
       if (updateData.topTaskers && Array.isArray(updateData.topTaskers)) {
         updateData.topTaskers = updateData.topTaskers.map(tasker => {
           const { profileImageFile, ...cleanTasker } = tasker;
@@ -427,7 +431,7 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer'), async (req, r
             existingDraft[key] = updateData[key];
           }
         });
-        
+
         // If it was rejected, move back to draft
         if (existingDraft.status === 'REJECTED') {
           existingDraft.status = 'DRAFT';
@@ -475,6 +479,18 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer'), async (req, r
     }
 
     // For DRAFT, PENDING, or REJECTED status - direct edit is allowed
+    if (updateData.name && updateData.name !== existingCategory.name) {
+      const nameExists = await TaskCategory.findOne({
+        name: updateData.name,
+        _id: { $ne: id },
+      });
+      if (nameExists) {
+        return res.status(409).json({
+          error: 'A category with this name already exists',
+        });
+      }
+    }
+
     if (updateData.slug && updateData.slug !== existingCategory.slug) {
       const slugExists = await TaskCategory.findOne({
         slug: updateData.slug,
@@ -493,7 +509,7 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer'), async (req, r
         return cleanTask;
       });
     }
-    
+
     if (updateData.topTaskers && Array.isArray(updateData.topTaskers)) {
       updateData.topTaskers = updateData.topTaskers.map(tasker => {
         const { profileImageFile, ...cleanTasker } = tasker;
@@ -539,7 +555,7 @@ router.delete('/:id', authenticate, allowRoles('writer', 'reviewer'), async (req
     // Validate ID format
     const mongoose = require('mongoose');
     if (!mongoose.Types.ObjectId.isValid(id)) {
-        return res.status(400).json({ error: 'Invalid Category ID format' });
+      return res.status(400).json({ error: 'Invalid Category ID format' });
     }
 
     const category = await TaskCategory.findById(id);
@@ -553,12 +569,12 @@ router.delete('/:id', authenticate, allowRoles('writer', 'reviewer'), async (req
     // 1. User is a manager (reviewer role), OR
     // 2. User is the creator of the category, OR
     // 3. Category has no creator (legacy data)
-    if (req.user.role !== 'reviewer' && category.createdBy && category.createdBy.toString() !== req.user._id.toString()) {
+    if (!['reviewer', 'manager'].includes(req.user.role) && category.createdBy && category.createdBy.toString() !== req.user._id.toString()) {
       return res.status(403).json({ error: 'Not authorized to delete this category' });
     }
 
     // Prevent deletion of published categories by non-managers
-    if (category.status === 'PUBLISHED' && req.user.role !== 'reviewer') {
+    if (category.status === 'PUBLISHED' && !['reviewer', 'manager'].includes(req.user.role)) {
       return res.status(403).json({ error: 'Cannot delete published categories. Contact manager.' });
     }
 
@@ -580,13 +596,13 @@ router.delete('/:id', authenticate, allowRoles('writer', 'reviewer'), async (req
 router.post('/submit/:id', authenticate, allowRoles('writer', 'reviewer'), async (req, res) => {
   try {
     let { id } = req.params;
-    
+
     if (id) id = id.trim();
 
     // Validate ID format
     const mongoose = require('mongoose');
     if (!mongoose.Types.ObjectId.isValid(id)) {
-        return res.status(400).json({ error: 'Invalid Category ID format' });
+      return res.status(400).json({ error: 'Invalid Category ID format' });
     }
 
     const category = await TaskCategory.findById(id);
@@ -607,6 +623,11 @@ router.post('/submit/:id', authenticate, allowRoles('writer', 'reviewer'), async
 
     category.status = 'PENDING_APPROVAL';
     category.reviewNotes = '';
+
+    if (req.body.submissionNotes) {
+      category.submissionNotes = req.body.submissionNotes;
+    }
+
     await category.save();
 
     return res.status(200).json({

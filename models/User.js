@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const crypto = require('crypto');
 
 const USER_STATUSES = ['PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED'];
-const USER_ROLES = ['writer', 'reviewer'];
+const USER_ROLES = ['writer', 'reviewer', 'manager'];
 
 const UserSchema = new mongoose.Schema(
   {
@@ -83,12 +83,12 @@ const UserSchema = new mongoose.Schema(
 );
 
 // Virtual for checking if account is locked
-UserSchema.virtual('isLocked').get(function() {
+UserSchema.virtual('isLocked').get(function () {
   return !!(this.lockUntil && this.lockUntil > Date.now());
 });
 
 // Method to generate password reset token
-UserSchema.methods.createPasswordResetToken = function() {
+UserSchema.methods.createPasswordResetToken = function () {
   const resetToken = crypto.randomBytes(32).toString('hex');
   this.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
   this.resetPasswordExpires = Date.now() + 15 * 60 * 1000; // 15 minutes
@@ -96,7 +96,7 @@ UserSchema.methods.createPasswordResetToken = function() {
 };
 
 // Method to generate email verification token
-UserSchema.methods.createEmailVerificationToken = function() {
+UserSchema.methods.createEmailVerificationToken = function () {
   const verifyToken = crypto.randomBytes(32).toString('hex');
   this.emailVerificationToken = crypto.createHash('sha256').update(verifyToken).digest('hex');
   this.emailVerificationExpires = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
@@ -104,7 +104,7 @@ UserSchema.methods.createEmailVerificationToken = function() {
 };
 
 // Method to increment login attempts
-UserSchema.methods.incLoginAttempts = function() {
+UserSchema.methods.incLoginAttempts = function () {
   // If lock has expired, reset attempts
   if (this.lockUntil && this.lockUntil < Date.now()) {
     return this.updateOne({
@@ -112,20 +112,20 @@ UserSchema.methods.incLoginAttempts = function() {
       $unset: { lockUntil: 1 }
     });
   }
-  
+
   const updates = { $inc: { loginAttempts: 1 } };
   const maxAttempts = 5;
-  
+
   // Lock account after 5 attempts for 15 minutes
   if (this.loginAttempts + 1 >= maxAttempts && !this.isLocked) {
     updates.$set = { lockUntil: Date.now() + 15 * 60 * 1000 };
   }
-  
+
   return this.updateOne(updates);
 };
 
 // Method to reset login attempts
-UserSchema.methods.resetLoginAttempts = function() {
+UserSchema.methods.resetLoginAttempts = function () {
   return this.updateOne({
     $set: { loginAttempts: 0 },
     $unset: { lockUntil: 1 }
