@@ -39,7 +39,7 @@ router.get('/', async (req, res) => {
 });
 
 // POST - Create a new subcategory (Writer and Manager only)
-router.post('/', authenticate, allowRoles('writer', 'reviewer'), async (req, res) => {
+router.post('/', authenticate, allowRoles('writer', 'reviewer', 'content_access_manager'), async (req, res) => {
   try {
     const body = req.body;
     const { imageFile, ...cleanBody } = body;
@@ -244,7 +244,7 @@ router.post('/', authenticate, allowRoles('writer', 'reviewer'), async (req, res
 });
 
 // PUT - Update an existing subcategory
-router.put('/:id', authenticate, allowRoles('writer', 'reviewer'), async (req, res) => {
+router.put('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_access_manager'), async (req, res) => {
   try {
     const { id } = req.params; // Get ID from URL params instead of body
     const body = req.body;
@@ -402,8 +402,8 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer'), async (req, r
   }
 });
 
-// DELETE - Delete a subcategory (Writer and Manager only)
-router.delete('/:id', authenticate, allowRoles('writer', 'reviewer'), async (req, res) => {
+// DELETE - Delete a subcategory 
+router.delete('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_access_manager'), async (req, res) => {
   try {
     const { id } = req.params; // Get ID from URL params instead of query
 
@@ -418,12 +418,12 @@ router.delete('/:id', authenticate, allowRoles('writer', 'reviewer'), async (req
     }
 
     // Check permissions: only creator or manager can delete
-    if (subcategory.createdBy && subcategory.createdBy.toString() !== req.user._id.toString() && !['reviewer', 'manager'].includes(req.user.role)) {
+    if (subcategory.createdBy && subcategory.createdBy.toString() !== req.user._id.toString() && !['reviewer', 'content_access_manager'].includes(req.user.role)) {
       return res.status(403).json({ error: 'Not authorized to delete this subcategory' });
     }
 
     // Prevent deletion of published subcategories by non-managers
-    if (subcategory.status === 'PUBLISHED' && !['reviewer', 'manager'].includes(req.user.role)) {
+    if (subcategory.status === 'PUBLISHED' && !['reviewer', 'content_access_manager'].includes(req.user.role)) {
       return res.status(403).json({ error: 'Cannot delete published subcategories. Contact manager.' });
     }
 
@@ -440,7 +440,7 @@ router.delete('/:id', authenticate, allowRoles('writer', 'reviewer'), async (req
 });
 
 // POST - Submit subcategory for approval (Writer and Manager)
-router.post('/submit/:id', authenticate, allowRoles('writer', 'reviewer'), async (req, res) => {
+router.post('/submit/:id', authenticate, allowRoles('writer', 'reviewer', 'content_access_manager'), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -451,7 +451,7 @@ router.post('/submit/:id', authenticate, allowRoles('writer', 'reviewer'), async
     }
 
     // Check ownership - managers can submit any, writers only their own
-    if (!['reviewer', 'manager'].includes(req.user.role) && subcategory.createdBy && subcategory.createdBy.toString() !== req.user._id.toString()) {
+    if (!['reviewer', 'content_access_manager'].includes(req.user.role) && subcategory.createdBy && subcategory.createdBy.toString() !== req.user._id.toString()) {
       return res.status(403).json({ error: 'Not authorized' });
     }
 

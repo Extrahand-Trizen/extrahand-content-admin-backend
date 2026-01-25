@@ -2,16 +2,17 @@
   "name": "extrahand-admin-backend",
   "version": "1.0.0",
   "description": "Backend server for Extrahand Content Admin",
-  "main": "server.js",
+  "main": "server.ts",
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js",
-    "seed": "node seed.js"
+    "start": "ts-node src/server.ts",
+    "dev": "nodemon --watch src --ext ts --exec ts-node src/server.ts",
+    "seed": "ts-node src/seed.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "axios": "^1.13.2",
     "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
@@ -19,12 +20,21 @@
     "express": "^4.18.2",
     "express-rate-limit": "^8.2.1",
     "express-validator": "^7.3.1",
+    "http-status-codes": "^2.3.0",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.0.0",
     "morgan": "^1.10.1",
-    "nodemailer": "^7.0.11"
+    "nodemailer": "^7.0.11",
+    "zod": "^4.3.5",
+    "zod-validation-error": "^5.0.0"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2"
+    "@types/bcrypt": "^6.0.0",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^25.0.10",
+    "nodemon": "^3.1.11",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
   }
 }

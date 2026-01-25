@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const crypto = require('crypto');
 
 const USER_STATUSES = ['PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED'];
-const USER_ROLES = ['writer', 'reviewer', 'manager'];
+const USER_ROLES = ['content_access_manager', 'writer', 'reviewer'];
 
 const UserSchema = new mongoose.Schema(
   {

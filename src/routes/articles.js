@@ -77,7 +77,7 @@ router.get('/my-articles', authenticate, async (req, res) => {
 });
 
 // POST - Create a new article (Writer and Manager only)
-router.post('/', authenticate, allowRoles('writer', 'reviewer'), async (req, res) => {
+router.post('/', authenticate, allowRoles('writer', 'reviewer', 'content_access_manager'), async (req, res) => {
   try {
     const { title, description, category, content, author, imageUrl } = req.body;
 
@@ -91,7 +91,7 @@ router.post('/', authenticate, allowRoles('writer', 'reviewer'), async (req, res
     // Create article
     // Writer articles start as DRAFT (they need to manually submit for approval)
     // Manager articles start as APPROVED (ready to publish)
-    const status = req.user.role === 'reviewer' ? 'APPROVED' : 'DRAFT';
+    const status = req.user.role === 'reviewer' || req.user.role === 'content_access_manager' ? 'APPROVED' : 'DRAFT';
     const isPublished = false; // All articles start unpublished
     
     const article = new Article({
@@ -110,7 +110,7 @@ router.post('/', authenticate, allowRoles('writer', 'reviewer'), async (req, res
     await article.save();
 
     return res.status(201).json({
-      message: req.user.role === 'reviewer' 
+      message: (req.user.role === 'reviewer' || req.user.role === 'content_access_manager') 
         ? 'Article created and approved. You can now publish it.' 
         : 'Article saved as draft. Submit for approval when ready.',
       article,
@@ -122,7 +122,7 @@ router.post('/', authenticate, allowRoles('writer', 'reviewer'), async (req, res
 });
 
 // PUT - Update an existing article (Creator or Manager)
-router.put('/:id', authenticate, allowRoles('writer', 'reviewer'), async (req, res) => {
+router.put('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_access_manager'), async (req, res) => {
   try {
     const { id } = req.params;
     const { title, description, category, content, author, imageUrl } = req.body;
@@ -135,7 +135,7 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer'), async (req, r
     }
 
     // Check permissions: only creator or manager can edit
-    if (article.createdBy.toString() !== req.user._id.toString() && req.user.role !== 'reviewer') {
+    if (article.createdBy.toString() !== req.user._id.toString() && req.user.role !== 'reviewer' && req.user.role !== 'content_access_manager') {
       return res.status(403).json({ error: 'Not authorized to edit this article' });
     }
 
@@ -223,7 +223,7 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer'), async (req, r
 });
 
 // DELETE - Delete an article (Creator or Manager)
-router.delete('/:id', authenticate, allowRoles('writer', 'reviewer'), async (req, res) => {
+router.delete('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_access_manager'), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -234,12 +234,12 @@ router.delete('/:id', authenticate, allowRoles('writer', 'reviewer'), async (req
     }
 
     // Check permissions: only creator or manager can delete
-    if (article.createdBy.toString() !== req.user._id.toString() && req.user.role !== 'reviewer') {
+    if (article.createdBy.toString() !== req.user._id.toString() && (req.user.role !== 'reviewer' && req.user.role !== 'content_access_manager')) {
       return res.status(403).json({ error: 'Not authorized to delete this article' });
     }
 
     // Prevent deletion of published articles by non-managers
-    if (article.status === 'PUBLISHED' && req.user.role !== 'reviewer') {
+    if (article.status === 'PUBLISHED' && (req.user.role !== 'reviewer' && req.user.role !== 'content_access_manager')) {
       return res.status(403).json({ error: 'Cannot delete published articles. Contact manager.' });
     }
 

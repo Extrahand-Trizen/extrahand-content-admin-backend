@@ -6,7 +6,7 @@ const authenticate = require('../middleware/auth');
 const allowRoles = require('../middleware/roles');
 
 // GET - Fetch all categories or a single category by slug
-router.get('/', async (req, res) => {
+router.get('/', authenticate, allowRoles('writer', 'reviewer', 'content_access_manager'), async (req, res) => {
   try {
     const { slug } = req.query;
 
@@ -62,7 +62,7 @@ router.get('/', async (req, res) => {
 });
 
 // POST - Create a new category (Writer and Manager only)
-router.post('/', authenticate, allowRoles('writer', 'reviewer'), async (req, res) => {
+router.post('/', authenticate, allowRoles('writer', 'reviewer', 'content_access_manager'), async (req, res) => {
   try {
     const body = req.body;
 
@@ -375,7 +375,7 @@ router.post('/', authenticate, allowRoles('writer', 'reviewer'), async (req, res
 });
 
 // PUT - Update an existing category
-router.put('/:id', authenticate, allowRoles('writer', 'reviewer'), async (req, res) => {
+router.put('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_access_manager'), async (req, res) => {
   try {
     const { id } = req.params; // Get ID from URL params instead of body
     const body = req.body;
@@ -542,7 +542,7 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer'), async (req, r
 });
 
 // DELETE - Delete a category (Writer and Manager only)
-router.delete('/:id', authenticate, allowRoles('writer', 'reviewer'), async (req, res) => {
+router.delete('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_access_manager'), async (req, res) => {
   try {
     let { id } = req.params; // Get ID from URL params instead of query
 
@@ -569,7 +569,7 @@ router.delete('/:id', authenticate, allowRoles('writer', 'reviewer'), async (req
     // 1. User is a manager (reviewer role), OR
     // 2. User is the creator of the category, OR
     // 3. Category has no creator (legacy data)
-    if (!['reviewer', 'manager'].includes(req.user.role) && category.createdBy && category.createdBy.toString() !== req.user._id.toString()) {
+    if (!['reviewer', 'content_access_manager'].includes(req.user.role) && category.createdBy && category.createdBy.toString() !== req.user._id.toString()) {
       return res.status(403).json({ error: 'Not authorized to delete this category' });
     }
 
@@ -593,7 +593,7 @@ router.delete('/:id', authenticate, allowRoles('writer', 'reviewer'), async (req
 });
 
 // POST - Submit category for approval (Writer and Manager)
-router.post('/submit/:id', authenticate, allowRoles('writer', 'reviewer'), async (req, res) => {
+router.post('/submit/:id', authenticate, allowRoles('writer', 'reviewer', 'content_access_manager'), async (req, res) => {
   try {
     let { id } = req.params;
 
@@ -612,7 +612,7 @@ router.post('/submit/:id', authenticate, allowRoles('writer', 'reviewer'), async
     }
 
     // Check ownership - managers can submit any, writers only their own
-    if (req.user.role !== 'reviewer' && category.createdBy && category.createdBy.toString() !== req.user._id.toString()) {
+    if (req.user.role !== 'reviewer' && req.user.role !== 'content_access_manager' && category.createdBy && category.createdBy.toString() !== req.user._id.toString()) {
       return res.status(403).json({ error: 'Not authorized' });
     }
 

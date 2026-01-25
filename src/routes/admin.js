@@ -14,8 +14,8 @@ const SALT_ROUNDS = parseInt(process.env.BCRYPT_SALT_ROUNDS) || 12;
 // Reviewer ROUTES - Article Approval System
 // ============================================
 
-// GET - Get all articles pending approval (Reviewer and Writer)
-router.get('/articles/pending', authenticate, allowRoles('reviewer', 'writer'), async (req, res) => {
+// GET - Get all articles pending approval (Reviewer and Writer and content_access_manager)
+router.get('/articles/pending', authenticate, allowRoles('reviewer', 'writer', 'content_access_manager'), async (req, res) => {
   try {
     let filter = {};
 
@@ -23,7 +23,7 @@ router.get('/articles/pending', authenticate, allowRoles('reviewer', 'writer'), 
     if (req.user.role === 'writer') {
       filter.createdBy = req.user._id;
       filter.status = { $in: ['DRAFT', 'PENDING_APPROVAL'] };
-    } else if (req.user.role === 'reviewer') {
+    } else if (req.user.role === 'reviewer' || req.user.role === 'content_access_manager') {
       // Reviewers only see articles that are actually pending approval (submitted by writers)
       // They don't need to see drafts unless they are their own (which handles differently usually)
       // But for the "Pending Approval" queue, it should strictly be PENDING_APPROVAL
@@ -41,8 +41,8 @@ router.get('/articles/pending', authenticate, allowRoles('reviewer', 'writer'), 
   }
 });
 
-// GET - Get all articles with any status (Reviewer and Writer)
-router.get('/articles/all', authenticate, allowRoles('reviewer', 'writer'), async (req, res) => {
+// GET - Get all articles with any status (Reviewer and Writer and content_access_manager)
+router.get('/articles/all', authenticate, allowRoles('reviewer', 'writer', 'content_access_manager'), async (req, res) => {
   try {
     const { status } = req.query;
     let filter = {};
@@ -70,8 +70,8 @@ router.get('/articles/all', authenticate, allowRoles('reviewer', 'writer'), asyn
   }
 });
 
-// POST - Approve article (Reviewer only)
-router.post('/articles/:id/approve', authenticate, allowRoles('reviewer', 'manager'), async (req, res) => {
+// POST - Approve article (Reviewer and content_access_manager only)
+router.post('/articles/:id/approve', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
     const { id } = req.params;
     const { reviewNotes } = req.body;
@@ -104,8 +104,8 @@ router.post('/articles/:id/approve', authenticate, allowRoles('reviewer', 'manag
   }
 });
 
-// POST - Reject article (Reviewer only)
-router.post('/articles/:id/reject', authenticate, allowRoles('reviewer'), async (req, res) => {
+// POST - Reject article (Reviewer and content_access_manager only)
+router.post('/articles/:id/reject', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
     const { id } = req.params;
     const { reviewNotes } = req.body;
@@ -138,8 +138,8 @@ router.post('/articles/:id/reject', authenticate, allowRoles('reviewer'), async 
   }
 });
 
-// POST - Publish approved article (Reviewer only)
-router.post('/articles/:id/publish', authenticate, allowRoles('reviewer', 'manager'), async (req, res) => {
+// POST - Publish approved article (content_access_manager and Reviewer only)
+router.post('/articles/:id/publish', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -185,8 +185,8 @@ router.post('/articles/:id/publish', authenticate, allowRoles('reviewer', 'manag
   }
 });
 
-// POST - Unpublish article (Reviewer only)
-router.post('/articles/:id/unpublish', authenticate, allowRoles('reviewer'), async (req, res) => {
+// POST - Unpublish article (Reviewer and content_access_manager only)
+router.post('/articles/:id/unpublish', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -212,11 +212,11 @@ router.post('/articles/:id/unpublish', authenticate, allowRoles('reviewer'), asy
 });
 
 // ============================================
-// USER MANAGEMENT (Reviewer only)
+// USER MANAGEMENT (content_access_manager only)
 // ============================================
 
 // GET - Get all users
-router.get('/users', authenticate, allowRoles('reviewer'), async (req, res) => {
+router.get('/users', authenticate, allowRoles('content_access_manager'), async (req, res) => {
   try {
     const users = await User.find({})
       .select('-passwordHash')
@@ -229,8 +229,8 @@ router.get('/users', authenticate, allowRoles('reviewer'), async (req, res) => {
   }
 });
 
-// PUT - Update user role (Reviewer only)
-router.put('/users/:id/role', authenticate, allowRoles('reviewer'), async (req, res) => {
+// PUT - Update user role (content_access_manager only)
+router.put('/users/:id/role', authenticate, allowRoles('content_access_manager'), async (req, res) => {
   try {
     const { id } = req.params;
     let { role } = req.body;
@@ -274,8 +274,8 @@ router.put('/users/:id/role', authenticate, allowRoles('reviewer'), async (req, 
   }
 });
 
-// PUT - Update user status (Reviewer only)
-router.put('/users/:id/status', authenticate, allowRoles('reviewer'), async (req, res) => {
+// PUT - Update user status (content_access_manager only)
+router.put('/users/:id/status', authenticate, allowRoles('content_access_manager'), async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
@@ -312,8 +312,8 @@ router.put('/users/:id/status', authenticate, allowRoles('reviewer'), async (req
   }
 });
 
-// DELETE - Delete user (Reviewer only)
-router.delete('/users/:id', authenticate, allowRoles('reviewer'), async (req, res) => {
+// DELETE - Delete user (content_access_manager only)
+router.delete('/users/:id', authenticate, allowRoles('content_access_manager'), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -335,8 +335,8 @@ router.delete('/users/:id', authenticate, allowRoles('reviewer'), async (req, re
   }
 });
 
-// POST - Create user (Reviewer only)
-router.post('/users', authenticate, allowRoles('reviewer'), async (req, res) => {
+// POST - Create user (content_access_manager only)
+router.post('/users', authenticate, allowRoles('content_access_manager'), async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
 
@@ -396,8 +396,8 @@ router.post('/users', authenticate, allowRoles('reviewer'), async (req, res) => 
 // DASHBOARD STATISTICS
 // ============================================
 
-// GET - Dashboard statistics (Reviewer and Writer)
-router.get('/dashboard/stats', authenticate, allowRoles('reviewer', 'writer'), async (req, res) => {
+// GET - Dashboard statistics (Content Access Manager and Reviewer and Writer)
+router.get('/dashboard/stats', authenticate, allowRoles('reviewer', 'writer', 'content_access_manager'), async (req, res) => {
   try {
     let articleFilter = {};
     let categoryFilter = {};
@@ -434,9 +434,9 @@ router.get('/dashboard/stats', authenticate, allowRoles('reviewer', 'writer'), a
       Article.countDocuments({ ...articleFilter, status: 'APPROVED' }),
       Article.countDocuments({ ...articleFilter, status: 'PUBLISHED' }),
       Article.countDocuments({ ...articleFilter, status: 'REJECTED' }),
-      req.user.role === 'reviewer' ? User.countDocuments() : 0,
-      req.user.role === 'reviewer' ? User.countDocuments({ role: 'reviewer' }) : 0,
-      req.user.role === 'reviewer' ? User.countDocuments({ role: 'writer' }) : 0,
+      (req.user.role === 'reviewer' || req.user.role === 'content_access_manager') ? User.countDocuments() : 0,
+      (req.user.role === 'reviewer' || req.user.role === 'content_access_manager') ? User.countDocuments({ role: 'reviewer' }) : 0,
+      (req.user.role === 'reviewer' || req.user.role === 'content_access_manager') ? User.countDocuments({ role: 'writer' }) : 0,
       TaskCategory.countDocuments(categoryFilter),
       TaskCategory.countDocuments({ ...categoryFilter, status: 'PENDING_APPROVAL' }),
       TaskCategory.countDocuments({ ...categoryFilter, status: 'APPROVED' }),
@@ -483,8 +483,8 @@ router.get('/dashboard/stats', authenticate, allowRoles('reviewer', 'writer'), a
   }
 });
 
-// GET - Recent activity (Reviewer)
-router.get('/dashboard/activity', authenticate, allowRoles('reviewer'), async (req, res) => {
+// GET - Recent activity (Reviewer and content_access_manager)
+router.get('/dashboard/activity', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
     const recentArticles = await Article.find()
       .populate('createdBy', 'name email')
@@ -512,7 +512,7 @@ router.get('/dashboard/activity', authenticate, allowRoles('reviewer'), async (r
 // ============================================
 
 // GET - Get all pending categories
-router.get('/categories/pending', authenticate, allowRoles('reviewer', 'manager'), async (req, res) => {
+router.get('/categories/pending', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
     // Only show PENDING_APPROVAL categories for Reviewer review
     // Drafts should not be visible until submitted
@@ -528,7 +528,7 @@ router.get('/categories/pending', authenticate, allowRoles('reviewer', 'manager'
 });
 
 // GET - Get all categories
-router.get('/categories/all', authenticate, allowRoles('reviewer', 'manager'), async (req, res) => {
+router.get('/categories/all', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
     const { status } = req.query;
     const filter = {};
@@ -551,7 +551,7 @@ router.get('/categories/all', authenticate, allowRoles('reviewer', 'manager'), a
 });
 
 // POST - Approve category
-router.post('/categories/:id/approve', authenticate, allowRoles('reviewer', 'manager'), async (req, res) => {
+router.post('/categories/:id/approve', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
     const { id } = req.params;
     const { reviewNotes } = req.body;
@@ -604,7 +604,7 @@ router.post('/categories/:id/approve', authenticate, allowRoles('reviewer', 'man
   }
 });
 // POST - Reject category
-router.post('/categories/:id/reject', authenticate, allowRoles('reviewer'), async (req, res) => {
+router.post('/categories/:id/reject', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
     const { id } = req.params;
     const { reviewNotes } = req.body;
@@ -638,7 +638,7 @@ router.post('/categories/:id/reject', authenticate, allowRoles('reviewer'), asyn
 });
 
 // POST - Publish category
-router.post('/categories/:id/publish', authenticate, allowRoles('reviewer', 'manager'), async (req, res) => {
+router.post('/categories/:id/publish', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -682,7 +682,7 @@ router.post('/categories/:id/publish', authenticate, allowRoles('reviewer', 'man
 });
 
 // POST - Unpublish category
-router.post('/categories/:id/unpublish', authenticate, allowRoles('reviewer'), async (req, res) => {
+router.post('/categories/:id/unpublish', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -708,11 +708,11 @@ router.post('/categories/:id/unpublish', authenticate, allowRoles('reviewer'), a
 });
 
 // ============================================
-// SUBCATEGORY APPROVAL SYSTEM (Reviewer only)
+// SUBCATEGORY APPROVAL SYSTEM (Reviewer and content_access_manager only)
 // ============================================
 
 // GET - Get all pending subcategories
-router.get('/subcategories/pending', authenticate, allowRoles('reviewer', 'manager'), async (req, res) => {
+router.get('/subcategories/pending', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
     const subcategories = await TaskSubcategory.find({ status: 'PENDING_APPROVAL' })
       .populate('createdBy', 'name email role')
@@ -727,7 +727,7 @@ router.get('/subcategories/pending', authenticate, allowRoles('reviewer', 'manag
 });
 
 // GET - Get all subcategories
-router.get('/subcategories/all', authenticate, allowRoles('reviewer', 'manager'), async (req, res) => {
+router.get('/subcategories/all', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
     const { status } = req.query;
     const filter = {};
@@ -750,7 +750,7 @@ router.get('/subcategories/all', authenticate, allowRoles('reviewer', 'manager')
 });
 
 // POST - Approve subcategory
-router.post('/subcategories/:id/approve', authenticate, allowRoles('reviewer', 'manager'), async (req, res) => {
+router.post('/subcategories/:id/approve', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
     const { id } = req.params;
     const { reviewNotes } = req.body;
@@ -803,7 +803,7 @@ router.post('/subcategories/:id/approve', authenticate, allowRoles('reviewer', '
 });
 
 // POST - Reject subcategory
-router.post('/subcategories/:id/reject', authenticate, allowRoles('reviewer', 'manager'), async (req, res) => {
+router.post('/subcategories/:id/reject', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
     const { id } = req.params;
     const { reviewNotes } = req.body;
@@ -837,7 +837,7 @@ router.post('/subcategories/:id/reject', authenticate, allowRoles('reviewer', 'm
 });
 
 // POST - Publish subcategory
-router.post('/subcategories/:id/publish', authenticate, allowRoles('reviewer', 'manager'), async (req, res) => {
+router.post('/subcategories/:id/publish', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -878,7 +878,7 @@ router.post('/subcategories/:id/publish', authenticate, allowRoles('reviewer', '
 });
 
 // POST - Unpublish subcategory
-router.post('/subcategories/:id/unpublish', authenticate, allowRoles('reviewer', 'manager'), async (req, res) => {
+router.post('/subcategories/:id/unpublish', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
     const { id } = req.params;
 

@@ -14,8 +14,12 @@ const authRouter = require('./routes/auth');
 const articlesRouter = require('./routes/articles');
 const adminRouter = require('./routes/admin');
 
+import {Request, Response, NextFunction} from 'express';
+import invitationRouter from './routes/invitations';
+
+
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = 5000;
 
 // Connect to MongoDB
 connectDB();
@@ -39,22 +43,24 @@ app.use('/api/task-categories', taskCategoriesRouter);
 app.use('/api/task-subcategories', taskSubcategoriesRouter);
 app.use('/api/articles', articlesRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/invitation', invitationRouter);
 
 // Health check route
-app.get('/health', (req, res) => {
+app.get('/health', (req : Request, res : Response) => {
   res.status(200).json({ status: 'OK', message: 'Server is running' });
 });
 
 // 404 handler
-app.use((req, res) => {
+app.use((req : Request, res : Response) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
 // Error handler
-app.use((err, req, res, next) => {
+app.use((err : any, req : Request, res : Response, next : NextFunction) => {
+  console.log('Error:', err.message);
   console.error(err.stack);
   res.status(500).json({
-    error: 'Something went wrong!',
+    error: err?.message || 'Something went wrong!',
     details: process.env.NODE_ENV === 'development' ? err.message : undefined,
   });
 });

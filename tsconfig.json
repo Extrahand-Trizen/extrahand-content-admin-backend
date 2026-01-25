@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "module": "CommonJS",
+
+    "allowJs": true,
+    "checkJs": false,
+
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+
+    "strict": true,
+    "moduleResolution": "Bundler",
+    "jsx": "preserve"
+  }
+}
