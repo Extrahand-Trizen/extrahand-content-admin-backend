@@ -6,9 +6,10 @@ WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
+COPY tsconfig.json ./
 
-# Install dependencies (use npm install if package-lock.json doesn't exist)
-RUN npm ci --omit=dev || npm install --omit=dev
+# Install all dependencies (including dev dependencies for ts-node)
+RUN npm ci || npm install
 
 # Copy application files
 COPY . .
@@ -19,5 +20,5 @@ EXPOSE 5000
 # Set environment to production
 ENV NODE_ENV=production
 
-# Start the application
-CMD ["node", "server.js"]
+# Start the application using ts-node (runs TypeScript directly)
+CMD ["npx", "ts-node", "src/server.ts"]
