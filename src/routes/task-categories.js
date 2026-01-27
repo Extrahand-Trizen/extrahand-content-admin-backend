@@ -5,8 +5,8 @@ const TaskSubcategory = require('../models/TaskSubcategory');
 const authenticate = require('../middleware/auth');
 const allowRoles = require('../middleware/roles');
 
-// GET - Fetch all categories or a single category by slug
-router.get('/', authenticate, allowRoles('writer', 'reviewer', 'content_access_manager'), async (req, res) => {
+// GET - Fetch all categories or a single category by slug (PUBLIC - no auth required)
+router.get('/', async (req, res) => {
   try {
     const { slug } = req.query;
 
@@ -50,8 +50,8 @@ router.get('/', authenticate, allowRoles('writer', 'reviewer', 'content_access_m
       return res.status(404).json({ error: 'Item not found' });
     }
 
-    // Fetch all categories (for admin)
-    const categories = await TaskCategory.find({}).sort({ createdAt: -1 });
+    // Fetch all categories (public endpoint - returns all categories)
+    const categories = await TaskCategory.find({}).sort({ name: 1 }); // Sort by name for better UX
     return res.status(200).json(categories);
   } catch (error) {
     if (process.env.NODE_ENV === 'development') {

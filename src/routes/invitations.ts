@@ -12,6 +12,7 @@ import jwt from "jsonwebtoken";
 import verifyInvitationToken from "../utils/invitations/verifyInvitationToken";
 import { sendEmailVerification } from "../utils/email";
 import User from "../models/User";
+import Invitation from "../models/Invitation";
 
 import bcrypt from "bcrypt";
 import crypto from "crypto";
@@ -98,6 +99,33 @@ invitationRouter.post(
           return res.status(409).json({ error: "Email already registered" });
         }
 
+        // Find and verify invitation exists and is valid
+        const invitation = await Invitation.findOne({ 
+          token: invitationToken,
+          status: 'pending'
+        });
+
+        if (!invitation) {
+          return res.status(400).json({ 
+            error: "Invitation not found or already used" 
+          });
+        }
+
+        // Check if invitation is expired
+        if (invitation.expiresAt && new Date(invitation.expiresAt) < new Date()) {
+          invitation.status = 'expired';
+          await invitation.save();
+          return res.status(400).json({ 
+            error: "Invitation has expired" 
+          });
+        }
+
+        if (invitation.email.toLowerCase() !== email.toLowerCase()) {
+          return res.status(400).json({ 
+            error: "Invitation email does not match" 
+          });
+        }
+
         const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
         
         // Generate email verification token (24-hour expiry)
@@ -115,6 +143,12 @@ invitationRouter.post(
           emailVerificationToken: hashedVerificationToken,
           emailVerificationExpires: verificationExpires,
         });
+
+        // Mark invitation as accepted
+        invitation.status = 'accepted';
+        invitation.usedBy = user._id;
+        invitation.usedAt = new Date();
+        await invitation.save();
 
         // Send verification email
         const verificationURL = `${process.env.CLIENT_URL || "http://localhost:3000"}/verify-email/${verificationToken}`;
@@ -166,6 +200,73 @@ invitationRouter.get(
       );
     }
 
+    // Check invitation status in database
+    const invitation = await Invitation.findOne({ token });
+
+    if (!invitation) {
+      return next(
+        createHttpError(
+          HttpCode.NOT_FOUND,
+          "Invitation not found",
+        ),
+      );
+    }
+
+    // Check if invitation is revoked
+    if (invitation.status === 'revoked') {
+      return next(
+        createHttpError(
+          HttpCode.BAD_REQUEST,
+          "This invitation has been revoked",
+        ),
+      );
+    }
+
+    // Check if invitation is already accepted
+    if (invitation.status === 'accepted') {
+      return next(
+        createHttpError(
+          HttpCode.BAD_REQUEST,
+          "This invitation has already been accepted",
+        ),
+      );
+    }
+
+    // Check if invitation is expired
+    if (invitation.expiresAt && new Date(invitation.expiresAt) < new Date()) {
+      // Mark as expired if not already marked
+      if (invitation.status !== 'expired') {
+        invitation.status = 'expired';
+        await invitation.save();
+      }
+      return next(
+        createHttpError(
+          HttpCode.BAD_REQUEST,
+          "This invitation has expired",
+        ),
+      );
+    }
+
+    // Check if invitation status is expired
+    if (invitation.status === 'expired') {
+      return next(
+        createHttpError(
+          HttpCode.BAD_REQUEST,
+          "This invitation has expired",
+        ),
+      );
+    }
+
+    // Verify email matches
+    if (invitation.email.toLowerCase() !== tokenDetails.data?.email?.toLowerCase()) {
+      return next(
+        createHttpError(
+          HttpCode.BAD_REQUEST,
+          "Invitation email does not match",
+        ),
+      );
+    }
+
     return res.status(HttpCode.OK).json({
       success: true,
       data: tokenDetails.data,
@@ -202,6 +303,44 @@ invitationRouter.post(
       }
 
       console.log("Validated Data:", validatedData.data);
+
+      // Check if user already exists
+      const existingUser = await User.findOne({ email: validatedData.data.email });
+      if (existingUser) {
+        return next(
+          createHttpError(
+            HttpCode.BAD_REQUEST,
+            "User with this email already exists",
+          ),
+        );
+      }
+
+      // Check for pending invite that hasn't expired
+      const existingInvite = await Invitation.findOne({
+        email: validatedData.data.email,
+        status: 'pending',
+      });
+
+      // Check if invitation is expired by comparing dates
+      const isExpired = existingInvite && existingInvite.expiresAt 
+        ? new Date(existingInvite.expiresAt) < new Date() 
+        : false;
+
+      if (existingInvite && !isExpired) {
+        return next(
+          createHttpError(
+            HttpCode.BAD_REQUEST,
+            "Pending invite already exists for this email",
+          ),
+        );
+      }
+
+      // If there's an expired invite, mark it as expired
+      if (existingInvite && isExpired) {
+        existingInvite.status = 'expired';
+        await existingInvite.save();
+      }
+
       console.log("Generating Token");
       const invitationToken: string = generateInvitationToken({
         role: validatedData.data.role,
@@ -215,6 +354,9 @@ invitationRouter.post(
       // Calculate expiration date (1 hour from now)
       const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour in milliseconds
       
+      // Get the current user from the request (invitedBy)
+      const invitedBy = (req as any).user?._id || null;
+
       try {
         const emailResponse = await emailServiceApi.post(
           "/api/v1/email/admin-invite",
@@ -228,6 +370,18 @@ invitationRouter.post(
         );
 
         if (emailResponse.status >= 200 && emailResponse.status < 300) {
+          // Store invitation in database
+          await Invitation.create({
+            email: validatedData.data.email,
+            role: validatedData.data.role,
+            token: invitationToken,
+            status: 'pending',
+            expiresAt: expiresAt,
+            invitedBy: invitedBy,
+            emailSent: true,
+            emailSentAt: new Date(),
+          });
+
           return res.status(HttpCode.OK).json({
             success: true,
             message: "Invitation sent successfully",
@@ -275,6 +429,106 @@ invitationRouter.post(
       }
     } catch (err) {
       console.error("Invite error:", err);
+      return next(err);
+    }
+  },
+);
+
+// List all invitations
+invitationRouter.get(
+  "/",
+  authenticate,
+  allowRoles("content_access_manager"),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { status, page = '1', limit = '20' } = req.query;
+      
+      const query: any = {};
+      if (status && status !== 'all') {
+        query.status = status;
+      }
+
+      const pageNum = parseInt(page as string, 10) || 1;
+      const limitNum = parseInt(limit as string, 10) || 20;
+      const skip = (pageNum - 1) * limitNum;
+
+      // Get total count
+      const total = await Invitation.countDocuments(query);
+
+      // Get paginated invitations
+      const invitations = await Invitation.find(query)
+        .populate('invitedBy', 'name email')
+        .populate('usedBy', 'name email')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limitNum);
+
+      const totalPages = Math.ceil(total / limitNum);
+
+      return res.status(HttpCode.OK).json({
+        success: true,
+        data: invitations,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total,
+          totalPages,
+        },
+      });
+    } catch (err) {
+      console.error("Error fetching invitations:", err);
+      return next(err);
+    }
+  },
+);
+
+// Revoke an invitation
+invitationRouter.delete(
+  "/:id",
+  authenticate,
+  allowRoles("content_access_manager"),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+
+      const invitation = await Invitation.findById(id);
+
+      if (!invitation) {
+        return next(
+          createHttpError(
+            HttpCode.NOT_FOUND,
+            "Invitation not found",
+          ),
+        );
+      }
+
+      if (invitation.status === 'accepted') {
+        return next(
+          createHttpError(
+            HttpCode.BAD_REQUEST,
+            "Cannot revoke an accepted invitation",
+          ),
+        );
+      }
+
+      if (invitation.status === 'revoked') {
+        return next(
+          createHttpError(
+            HttpCode.BAD_REQUEST,
+            "Invitation is already revoked",
+          ),
+        );
+      }
+
+      invitation.status = 'revoked';
+      await invitation.save();
+
+      return res.status(HttpCode.OK).json({
+        success: true,
+        message: "Invitation revoked successfully",
+      });
+    } catch (err) {
+      console.error("Error revoking invitation:", err);
       return next(err);
     }
   },

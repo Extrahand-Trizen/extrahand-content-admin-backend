@@ -15,7 +15,7 @@ RUN npm ci || npm install
 COPY . .
 
 # Expose the application port
-EXPOSE 5000
+EXPOSE 5001
 
 # Set environment to production
 ENV NODE_ENV=production

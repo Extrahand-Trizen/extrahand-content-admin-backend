@@ -26,10 +26,10 @@ router.get('/articles/pending', authenticate, allowRoles('reviewer', 'writer', '
       filter.createdBy = req.user._id;
       filter.status = { $in: ['DRAFT', 'PENDING_APPROVAL'] };
     } else if (req.user.role === 'reviewer' || req.user.role === 'content_access_manager') {
-      // Reviewers only see articles that are actually pending approval (submitted by writers)
-      // They don't need to see drafts unless they are their own (which handles differently usually)
-      // But for the "Pending Approval" queue, it should strictly be PENDING_APPROVAL
+      // Reviewers and content_access_managers see all articles pending approval from any writer
+      // This ensures they can review articles created by any writer
       filter.status = 'PENDING_APPROVAL';
+      // No filter by createdBy - they see all pending articles
     }
 
     const articles = await Article.find(filter)
@@ -43,29 +43,46 @@ router.get('/articles/pending', authenticate, allowRoles('reviewer', 'writer', '
   }
 });
 
-// GET - Get all articles with any status (Reviewer and Writer and content_access_manager)
-router.get('/articles/all', authenticate, allowRoles('reviewer', 'writer', 'content_access_manager'), async (req, res) => {
+// GET - Get all articles with any status (Reviewer and content_access_manager only)
+// Writers should use /api/articles/my-articles instead
+router.get('/articles/all', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
-    const { status } = req.query;
+    const { status, limit, page } = req.query;
     let filter = {};
 
-    // Writers only see their own articles
-    if (req.user.role === 'writer') {
-      filter.createdBy = req.user._id;
-    }
-    // Reviewers see all articles
+    // Reviewers and content_access_managers see all articles (no filter by createdBy)
+    // This ensures they can see articles created by any writer
 
     if (status) {
       filter.status = status;
     }
 
-    const articles = await Article.find(filter)
-      .populate('createdBy', 'name email role')
-      .populate('reviewedBy', 'name email')
-      .populate('publishedBy', 'name email')
-      .sort({ createdAt: -1 });
+    // Pagination support - default to 50 items per page
+    const pageNum = parseInt(page) || 1;
+    const limitNum = parseInt(limit) || 50;
+    const skip = (pageNum - 1) * limitNum;
 
-    return res.status(200).json(articles);
+    const [articles, total] = await Promise.all([
+      Article.find(filter)
+        .populate('createdBy', 'name email role')
+        .populate('reviewedBy', 'name email')
+        .populate('publishedBy', 'name email')
+        .sort({ createdAt: -1 })
+        .limit(limitNum)
+        .skip(skip)
+        .lean(), // Use lean() for better performance
+      Article.countDocuments(filter)
+    ]);
+
+    return res.status(200).json({
+      data: articles,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        pages: Math.ceil(total / limitNum),
+      },
+    });
   } catch (error) {
     console.error('Error fetching all articles:', error);
     return res.status(500).json({ error: 'Failed to fetch articles' });
@@ -220,6 +237,16 @@ router.post('/articles/:id/unpublish', authenticate, allowRoles('reviewer', 'con
 // GET - Get all users
 router.get('/users', authenticate, allowRoles('content_access_manager'), async (req, res) => {
   try {
+    const { page = '1', limit = '20' } = req.query;
+    
+    const pageNum = parseInt(page, 10) || 1;
+    const limitNum = parseInt(limit, 10) || 20;
+    const skip = (pageNum - 1) * limitNum;
+
+    // Get total count
+    const total = await User.countDocuments({});
+
+    // Get paginated users
     const users = await User.find({})
       .select('-passwordHash -resetPasswordToken -resetPasswordExpires -emailVerificationToken -emailVerificationExpires -loginAttempts -lockUntil')
       .populate({
@@ -237,9 +264,21 @@ router.get('/users', authenticate, allowRoles('content_access_manager'), async (
         select: 'name email',
         options: { strictPopulate: false }
       })
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limitNum);
 
-    return res.status(200).json(users);
+    const totalPages = Math.ceil(total / limitNum);
+
+    return res.status(200).json({
+      data: users,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages,
+      },
+    });
   } catch (error) {
     console.error('Error fetching users:', error);
     return res.status(500).json({ error: 'Failed to fetch users', details: error.message });
@@ -810,20 +849,39 @@ router.get('/categories/pending', authenticate, allowRoles('reviewer', 'content_
 // GET - Get all categories
 router.get('/categories/all', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
-    const { status } = req.query;
+    const { status, limit, page } = req.query;
     const filter = {};
 
     if (status) {
       filter.status = status;
     }
 
-    const categories = await TaskCategory.find(filter)
-      .populate('createdBy', 'name email role')
-      .populate('reviewedBy', 'name email')
-      .populate('publishedBy', 'name email')
-      .sort({ createdAt: -1 });
+    // Pagination support - default to 50 items per page
+    const pageNum = parseInt(page) || 1;
+    const limitNum = parseInt(limit) || 50;
+    const skip = (pageNum - 1) * limitNum;
 
-    return res.status(200).json(categories);
+    const [categories, total] = await Promise.all([
+      TaskCategory.find(filter)
+        .populate('createdBy', 'name email role')
+        .populate('reviewedBy', 'name email')
+        .populate('publishedBy', 'name email')
+        .sort({ createdAt: -1 })
+        .limit(limitNum)
+        .skip(skip)
+        .lean(), // Use lean() for better performance
+      TaskCategory.countDocuments(filter)
+    ]);
+
+    return res.status(200).json({
+      data: categories,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        pages: Math.ceil(total / limitNum),
+      },
+    });
   } catch (error) {
     console.error('Error fetching categories:', error);
     return res.status(500).json({ error: 'Failed to fetch categories' });
@@ -1009,20 +1067,39 @@ router.get('/subcategories/pending', authenticate, allowRoles('reviewer', 'conte
 // GET - Get all subcategories
 router.get('/subcategories/all', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
-    const { status } = req.query;
+    const { status, limit, page } = req.query;
     const filter = {};
 
     if (status) {
       filter.status = status;
     }
 
-    const subcategories = await TaskSubcategory.find(filter)
-      .populate('createdBy', 'name email role')
-      .populate('reviewedBy', 'name email')
-      .populate('publishedBy', 'name email')
-      .sort({ createdAt: -1 });
+    // Pagination support - default to 50 items per page
+    const pageNum = parseInt(page) || 1;
+    const limitNum = parseInt(limit) || 50;
+    const skip = (pageNum - 1) * limitNum;
 
-    return res.status(200).json(subcategories);
+    const [subcategories, total] = await Promise.all([
+      TaskSubcategory.find(filter)
+        .populate('createdBy', 'name email role')
+        .populate('reviewedBy', 'name email')
+        .populate('publishedBy', 'name email')
+        .sort({ createdAt: -1 })
+        .limit(limitNum)
+        .skip(skip)
+        .lean(), // Use lean() for better performance
+      TaskSubcategory.countDocuments(filter)
+    ]);
+
+    return res.status(200).json({
+      data: subcategories,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        pages: Math.ceil(total / limitNum),
+      },
+    });
   } catch (error) {
     console.error('Error fetching subcategories:', error);
     return res.status(500).json({ error: 'Failed to fetch subcategories' });
