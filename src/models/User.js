@@ -70,6 +70,38 @@ const UserSchema = new mongoose.Schema(
       ref: 'User',
       default: null,
     },
+    // Suspension fields
+    suspendedUntil: {
+      type: Date,
+      default: null,
+    },
+    suspendedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    suspendedReason: {
+      type: String,
+      default: null,
+    },
+    // Ban fields
+    banned: {
+      type: Boolean,
+      default: false,
+    },
+    bannedAt: {
+      type: Date,
+      default: null,
+    },
+    bannedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    bannedReason: {
+      type: String,
+      default: null,
+    },
     lastLoginAt: {
       type: Date,
       default: null,

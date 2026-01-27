@@ -24,6 +24,22 @@ const testUsers = [
     status: 'APPROVED',
     emailVerified: true,
   },
+  {
+    name: 'Content Access Manager',
+    email: 'contentaccessmanager@extrahand.in',
+    password: 'content@123',
+    role: 'content_access_manager',
+    status: 'APPROVED',
+    emailVerified: true,
+  },
+  {
+    name: 'Content Access Manager',
+    email: 'cam@gmail.com',
+    password: 'content@123',
+    role: 'content_access_manager',
+    status: 'APPROVED',
+    emailVerified: true,
+  }
 ];
 
 async function seedDatabase() {
@@ -78,6 +94,10 @@ async function seedDatabase() {
     console.log('   Email: writer@gmail.com');
     console.log('   Password: Writer123!');
     console.log('   Role: writer\n');
+    console.log('3. Content Access Manager:');
+    console.log('   Email: contentaccessmanager@extrahand.in');
+    console.log('   Password: content@123');
+    console.log('   Role: content_access_manager\n');
 
     // Close connection
     await mongoose.connection.close();

@@ -1,12 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcrypt'); // Added bcrypt
+const crypto = require('crypto');
 const Article = require('../models/Article');
 const TaskCategory = require('../models/TaskCategory');
 const TaskSubcategory = require('../models/TaskSubcategory');
 const User = require('../models/User');
 const authenticate = require('../middleware/auth');
 const allowRoles = require('../middleware/roles');
+const EmailServiceClient = require('../utils/EmailServiceClient');
 
 const SALT_ROUNDS = parseInt(process.env.BCRYPT_SALT_ROUNDS) || 12;
 
@@ -219,13 +221,28 @@ router.post('/articles/:id/unpublish', authenticate, allowRoles('reviewer', 'con
 router.get('/users', authenticate, allowRoles('content_access_manager'), async (req, res) => {
   try {
     const users = await User.find({})
-      .select('-passwordHash')
+      .select('-passwordHash -resetPasswordToken -resetPasswordExpires -emailVerificationToken -emailVerificationExpires -loginAttempts -lockUntil')
+      .populate({
+        path: 'suspendedBy',
+        select: 'name email',
+        options: { strictPopulate: false }
+      })
+      .populate({
+        path: 'bannedBy',
+        select: 'name email',
+        options: { strictPopulate: false }
+      })
+      .populate({
+        path: 'approvedBy',
+        select: 'name email',
+        options: { strictPopulate: false }
+      })
       .sort({ createdAt: -1 });
 
     return res.status(200).json(users);
   } catch (error) {
     console.error('Error fetching users:', error);
-    return res.status(500).json({ error: 'Failed to fetch users' });
+    return res.status(500).json({ error: 'Failed to fetch users', details: error.message });
   }
 });
 
@@ -345,6 +362,15 @@ router.post('/users', authenticate, allowRoles('content_access_manager'), async 
       return res.status(400).json({ error: 'All fields are required' });
     }
 
+    // Email domain validation
+    const normalizedEmail = (email || "").toLowerCase().trim();
+    const allowedDomains = ["@gmail.com", "@extrahand.in", "@cognitbotz.com"];
+    if (!allowedDomains.some(domain => normalizedEmail.endsWith(domain))) {
+      return res.status(400).json({ 
+        error: "Only Gmail addresses (@gmail.com), @extrahand.in, or @cognitbotz.com addresses are allowed" 
+      });
+    }
+
     if (!['writer', 'reviewer'].includes(role)) {
       return res.status(400).json({ error: 'Invalid role' });
     }
@@ -389,6 +415,234 @@ router.post('/users', authenticate, allowRoles('content_access_manager'), async 
   } catch (error) {
     console.error('Error creating user:', error);
     return res.status(500).json({ error: 'Failed to create user' });
+  }
+});
+
+// POST - Reset user password (content_access_manager only)
+router.post('/users/:id/reset-password', authenticate, allowRoles('content_access_manager'), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const user = await User.findById(id);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Prevent resetting own password through this route
+    if (id === req.user._id.toString()) {
+      return res.status(400).json({ error: 'Cannot reset your own password through this route. Use the forgot password feature instead.' });
+    }
+
+    // Generate password reset token (24-hour expiry)
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const hashedResetToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+    const resetExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+    // Save token to user
+    user.resetPasswordToken = hashedResetToken;
+    user.resetPasswordExpires = resetExpires;
+    await user.save();
+
+    // Construct reset link
+    const resetLink = `${process.env.CLIENT_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`;
+
+    // Send password reset email (fire-and-forget)
+    EmailServiceClient.sendPasswordResetEmail(
+      user.email,
+      resetLink,
+      user.name,
+      resetExpires
+    ).catch((error) => {
+      console.error('Failed to send password reset email:', error);
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Password reset email sent successfully',
+      data: {
+        emailSent: true,
+        email: user.email,
+        resetLink: resetLink, // Include as fallback
+        expiresAt: resetExpires.toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error('Error resetting password:', error);
+    return res.status(500).json({ error: 'Failed to reset password' });
+  }
+});
+
+// POST - Suspend user (content_access_manager only)
+router.post('/users/:id/suspend', authenticate, allowRoles('content_access_manager'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason, durationDays } = req.body;
+
+    // Default to 2.5 days (60 hours) if not specified, allow 2-3 days
+    const days = durationDays ? Math.max(2, Math.min(3, durationDays)) : 2.5;
+    const suspensionDuration = days * 24 * 60 * 60 * 1000; // Convert to milliseconds
+    const suspendedUntil = new Date(Date.now() + suspensionDuration);
+
+    const user = await User.findById(id);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Prevent suspending self
+    if (id === req.user._id.toString()) {
+      return res.status(400).json({ error: 'Cannot suspend your own account' });
+    }
+
+    // Prevent suspending content_access_manager
+    if (user.role === 'content_access_manager') {
+      return res.status(400).json({ error: 'Cannot suspend a content access manager' });
+    }
+
+    user.status = 'SUSPENDED';
+    user.suspendedUntil = suspendedUntil;
+    user.suspendedBy = req.user._id;
+    user.suspendedReason = reason || 'No reason provided';
+    await user.save();
+
+    return res.status(200).json({
+      message: `User suspended for ${days} days`,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        status: user.status,
+        suspendedUntil: user.suspendedUntil,
+        suspendedReason: user.suspendedReason,
+      },
+    });
+  } catch (error) {
+    console.error('Error suspending user:', error);
+    return res.status(500).json({ error: 'Failed to suspend user' });
+  }
+});
+
+// POST - Unsuspend user (content_access_manager only)
+router.post('/users/:id/unsuspend', authenticate, allowRoles('content_access_manager'), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const user = await User.findById(id);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (user.status !== 'SUSPENDED') {
+      return res.status(400).json({ error: 'User is not suspended' });
+    }
+
+    // Restore to APPROVED status
+    user.status = 'APPROVED';
+    user.suspendedUntil = null;
+    user.suspendedBy = null;
+    user.suspendedReason = null;
+    await user.save();
+
+    return res.status(200).json({
+      message: 'User unsuspended successfully',
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        status: user.status,
+      },
+    });
+  } catch (error) {
+    console.error('Error unsuspending user:', error);
+    return res.status(500).json({ error: 'Failed to unsuspend user' });
+  }
+});
+
+// POST - Ban user (content_access_manager only)
+router.post('/users/:id/ban', authenticate, allowRoles('content_access_manager'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    const user = await User.findById(id);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Prevent banning self
+    if (id === req.user._id.toString()) {
+      return res.status(400).json({ error: 'Cannot ban your own account' });
+    }
+
+    // Prevent banning content_access_manager
+    if (user.role === 'content_access_manager') {
+      return res.status(400).json({ error: 'Cannot ban a content access manager' });
+    }
+
+    user.banned = true;
+    user.bannedAt = new Date();
+    user.bannedBy = req.user._id;
+    user.bannedReason = reason || 'No reason provided';
+    user.status = 'REJECTED'; // Set status to REJECTED for banned users
+    await user.save();
+
+    return res.status(200).json({
+      message: 'User banned successfully',
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        banned: user.banned,
+        bannedAt: user.bannedAt,
+        bannedReason: user.bannedReason,
+        status: user.status,
+      },
+    });
+  } catch (error) {
+    console.error('Error banning user:', error);
+    return res.status(500).json({ error: 'Failed to ban user' });
+  }
+});
+
+// POST - Unban user (content_access_manager only)
+router.post('/users/:id/unban', authenticate, allowRoles('content_access_manager'), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const user = await User.findById(id);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (!user.banned) {
+      return res.status(400).json({ error: 'User is not banned' });
+    }
+
+    // Restore to APPROVED status
+    user.banned = false;
+    user.bannedAt = null;
+    user.bannedBy = null;
+    user.bannedReason = null;
+    user.status = 'APPROVED';
+    await user.save();
+
+    return res.status(200).json({
+      message: 'User unbanned successfully',
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        banned: user.banned,
+        status: user.status,
+      },
+    });
+  } catch (error) {
+    console.error('Error unbanning user:', error);
+    return res.status(500).json({ error: 'Failed to unban user' });
   }
 });
 

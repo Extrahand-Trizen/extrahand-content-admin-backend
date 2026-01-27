@@ -26,16 +26,22 @@ const invitationSchema = z.object({
     .refine((email) => email.includes("@"), {
       message: "Invalid email address",
     })
-    .refine((email) => email.endsWith("gmail.com"), {
-      message: "Email must end with gmail.com",
+    .refine((email) => {
+      const normalizedEmail = email.toLowerCase().trim();
+      return normalizedEmail.endsWith("@gmail.com") || 
+             normalizedEmail.endsWith("@extrahand.in") || 
+             normalizedEmail.endsWith("@cognitbotz.com");
+    }, {
+      message: "Email must end with @gmail.com, @extrahand.in, or @cognitbotz.com",
     }),
   role: z.enum(["reviewer", "writer"]),
 });
 
 const emailServiceApi = axios.create({
-  baseURL: process.env.EMAIL_SERVICE || "https://api.emailservice.com/v1",
+  baseURL: process.env.EMAIL_SERVICE || "http://localhost:4007",
   headers: {
-    Authorization: `Bearer ${process.env.EMAIL_SERVICE_API_KEY}`,
+    "X-Service-Auth": process.env.SERVICE_AUTH_TOKEN || "",
+    "X-Service-Name": "content-admin-backend",
     "Content-Type": "application/json",
   },
 });
@@ -85,6 +91,12 @@ invitationRouter.post(
         }
 
         const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+        
+        // Generate email verification token (24-hour expiry)
+        const verificationToken = crypto.randomBytes(32).toString('hex');
+        const hashedVerificationToken = crypto.createHash('sha256').update(verificationToken).digest('hex');
+        const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+        
         const user = await User.create({
           name,
           email,
@@ -92,12 +104,9 @@ invitationRouter.post(
           role: userRole,
           status: "APPROVED",
           emailVerified: false, // Email verification required
+          emailVerificationToken: hashedVerificationToken,
+          emailVerificationExpires: verificationExpires,
         });
-
-        // Generate email verification token
-        // @ts-ignore
-        const verificationToken = user?.createEmailVerificationToken(); 
-        await user.save();
 
         // Send verification email
         const verificationURL = `${process.env.CLIENT_URL || "http://localhost:3000"}/verify-email/${verificationToken}`;
@@ -183,29 +192,68 @@ invitationRouter.post(
 
       console.log("Invitation Token:", invitationToken);
 
-      const invitationLink = `${process.env.CLIENT_URL}/invite/token=${invitationToken}`;
-      const emailResponse = await emailServiceApi.post(
-        "/api/v1/email/send-invitation",
-        {
-          ...validatedData.data,
-          inviteLink: invitationLink,
-          expiresAt: "1h",
-        },
-      );
+      const invitationLink = `${process.env.CLIENT_URL}/invite?token=${invitationToken}`;
+      
+      // Calculate expiration date (1 hour from now)
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour in milliseconds
+      
+      try {
+        const emailResponse = await emailServiceApi.post(
+          "/api/v1/email/admin-invite",
+          {
+            email: validatedData.data.email,
+            role: validatedData.data.role,
+            inviteLink: invitationLink,
+            expiresAt: expiresAt.toISOString(),
+          },
+        );
 
-      if (emailResponse.status >= 200 && emailResponse.status < 300) {
-        return res.status(HttpCode.OK).json({
-          success: true,
-          message: "Invitation sent successfully",
-        });
+        if (emailResponse.status >= 200 && emailResponse.status < 300) {
+          return res.status(HttpCode.OK).json({
+            success: true,
+            message: "Invitation sent successfully",
+          });
+        }
+
+        return next(
+          createHttpError(
+            HttpCode.BAD_GATEWAY,
+            "Failed to send invitation email",
+          ),
+        );
+      } catch (emailError: any) {
+        console.error("Email service error:", emailError);
+        
+        // Handle axios errors
+        if (emailError.response) {
+          const status = emailError.response.status;
+          const errorMessage = emailError.response.data?.error || emailError.response.data?.message || "Email service error";
+          
+          if (status === 401) {
+            return next(
+              createHttpError(
+                HttpCode.UNAUTHORIZED,
+                "Email service authentication failed. Please check SERVICE_AUTH_TOKEN configuration.",
+              ),
+            );
+          }
+          
+          return next(
+            createHttpError(
+              status >= 500 ? HttpCode.BAD_GATEWAY : status,
+              `Email service error: ${errorMessage}`,
+            ),
+          );
+        }
+        
+        // Network or other errors
+        return next(
+          createHttpError(
+            HttpCode.BAD_GATEWAY,
+            `Failed to connect to email service: ${emailError.message || "Unknown error"}`,
+          ),
+        );
       }
-
-      return next(
-        createHttpError(
-          HttpCode.BAD_GATEWAY,
-          "Failed to send invitation email",
-        ),
-      );
     } catch (err) {
       console.error("Invite error:", err);
       return next(err);

@@ -47,10 +47,12 @@ router.post(
     body("email")
       .isEmail()
       .withMessage("Valid email is required")
-      .normalizeEmail()
+      .normalizeEmail({ gmail_remove_dots: false })
       .custom((value) => {
-        if (!value.endsWith("@gmail.com")) {
-          throw new Error("Only Gmail addresses (@gmail.com) are allowed");
+        const normalizedEmail = (value || "").toLowerCase().trim();
+        const allowedDomains = ["@gmail.com", "@extrahand.in", "@cognitbotz.com"];
+        if (!allowedDomains.some(domain => normalizedEmail.endsWith(domain))) {
+          throw new Error("Only Gmail addresses (@gmail.com), @extrahand.in, or @cognitbotz.com addresses are allowed");
         }
         return true;
       }),
@@ -130,10 +132,12 @@ router.post(
     body("email")
       .isEmail()
       .withMessage("Valid email is required")
-      // .normalizeEmail()
+      .normalizeEmail({ gmail_remove_dots: false })
       .custom((value) => {
-        if (!value.endsWith("@gmail.com")) {
-          throw new Error("Only Gmail addresses (@gmail.com) are allowed");
+        const normalizedEmail = (value || "").toLowerCase().trim();
+        const allowedDomains = ["@gmail.com", "@extrahand.in", "@cognitbotz.com"];
+        if (!allowedDomains.some(domain => normalizedEmail.endsWith(domain))) {
+          throw new Error("Only Gmail addresses (@gmail.com), @extrahand.in, or @cognitbotz.com addresses are allowed");
         }
         return true;
       }),
@@ -246,10 +250,12 @@ router.post(
     body("email")
       .isEmail()
       .withMessage("Valid email is required")
-      .normalizeEmail()
+      .normalizeEmail({ gmail_remove_dots: false })
       .custom((value) => {
-        if (!value.endsWith("@gmail.com")) {
-          throw new Error("Only Gmail addresses (@gmail.com) are allowed");
+        const normalizedEmail = (value || "").toLowerCase().trim();
+        const allowedDomains = ["@gmail.com", "@extrahand.in", "@cognitbotz.com"];
+        if (!allowedDomains.some(domain => normalizedEmail.endsWith(domain))) {
+          throw new Error("Only Gmail addresses (@gmail.com), @extrahand.in, or @cognitbotz.com addresses are allowed");
         }
         return true;
       }),
