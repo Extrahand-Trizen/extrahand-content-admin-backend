@@ -23,14 +23,22 @@ const invitationRouter = express.Router();
 const invitationSchema = z.object({
   email: z
     .string()
+    .min(1, "Email is required")
+    .transform((val) => val.trim().toLowerCase())
     .refine((email) => email.includes("@"), {
-      message: "Invalid email address",
+      message: "Invalid email address format",
     })
     .refine((email) => {
-      const normalizedEmail = email.toLowerCase().trim();
-      return normalizedEmail.endsWith("@gmail.com") || 
-             normalizedEmail.endsWith("@extrahand.in") || 
-             normalizedEmail.endsWith("@cognitbotz.com");
+      const isValid = email.endsWith("@gmail.com") || 
+                      email.endsWith("@extrahand.in") || 
+                      email.endsWith("@cognitbotz.com");
+      if (!isValid) {
+        console.log(`Email validation failed for: "${email}"`);
+        console.log(`Ends with @gmail.com: ${email.endsWith("@gmail.com")}`);
+        console.log(`Ends with @extrahand.in: ${email.endsWith("@extrahand.in")}`);
+        console.log(`Ends with @cognitbotz.com: ${email.endsWith("@cognitbotz.com")}`);
+      }
+      return isValid;
     }, {
       message: "Email must end with @gmail.com, @extrahand.in, or @cognitbotz.com",
     }),
@@ -172,9 +180,19 @@ invitationRouter.post(
   allowRoles("content_access_manager"),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
+      // Log the incoming email for debugging
+      console.log("Received invitation request:", {
+        email: req.body.email,
+        role: req.body.role,
+        emailType: typeof req.body.email,
+        emailLength: req.body.email?.length,
+      });
+
       const validatedData = invitationSchema.safeParse(req.body);
 
       if (!validatedData.success) {
+        console.error("Validation failed:", validatedData.error.issues);
+        console.error("Received email value:", JSON.stringify(req.body.email));
         return next(
           createHttpError(
             HttpCode.BAD_REQUEST,
@@ -205,6 +223,7 @@ invitationRouter.post(
             role: validatedData.data.role,
             inviteLink: invitationLink,
             expiresAt: expiresAt.toISOString(),
+            platformName: "Content Admin Portal", // Specify platform name for content admin
           },
         );
 

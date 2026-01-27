@@ -24,12 +24,48 @@ const PORT = 5001;
 // Connect to MongoDB
 connectDB();
 
+// CORS Configuration
+const allowedOrigins = process.env.ALLOWED_ORIGINS 
+  ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
+  : process.env.CLIENT_URL 
+    ? [process.env.CLIENT_URL]
+    : ['http://localhost:3000'];
+
+const corsOptions = {
+  origin: function (origin: string | undefined, callback: any) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) {
+      return callback(null, true);
+    }
+    
+    // Check if origin is in allowed list
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      // In development, allow all origins
+      if (process.env.NODE_ENV === 'development') {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Service-Auth', 'X-Service-Name'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+  maxAge: 86400, // 24 hours
+};
+
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(cookieParser());
 app.use(morgan('dev'));
+
+// Handle preflight requests explicitly
+app.options('*', cors(corsOptions));
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -57,9 +93,17 @@ app.use((req : Request, res : Response) => {
 
 // Error handler
 app.use((err : any, req : Request, res : Response, next : NextFunction) => {
+  // Handle CORS errors
+  if (err.message && err.message.includes('CORS')) {
+    return res.status(403).json({
+      error: 'CORS policy violation',
+      message: 'Origin not allowed by CORS policy',
+    });
+  }
+  
   console.log('Error:', err.message);
   console.error(err.stack);
-  res.status(500).json({
+  res.status(err.status || 500).json({
     error: err?.message || 'Something went wrong!',
     details: process.env.NODE_ENV === 'development' ? err.message : undefined,
   });

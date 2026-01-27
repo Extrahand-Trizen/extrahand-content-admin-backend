@@ -452,7 +452,8 @@ router.post('/users/:id/reset-password', authenticate, allowRoles('content_acces
       user.email,
       resetLink,
       user.name,
-      resetExpires
+      resetExpires,
+      'Content Admin Portal'
     ).catch((error) => {
       console.error('Failed to send password reset email:', error);
     });
@@ -505,6 +506,20 @@ router.post('/users/:id/suspend', authenticate, allowRoles('content_access_manag
     user.suspendedBy = req.user._id;
     user.suspendedReason = reason || 'No reason provided';
     await user.save();
+
+    // Send suspension email (fire-and-forget)
+    const daysRemaining = Math.ceil((suspendedUntil.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    EmailServiceClient.sendSuspensionEmail(
+      user.email,
+      user.name,
+      suspendedUntil,
+      reason || 'No reason provided',
+      daysRemaining,
+      'Please contact your manager or administrator for assistance.',
+      'Content Admin Portal'
+    ).catch((error) => {
+      console.error('Failed to send suspension email:', error);
+    });
 
     return res.status(200).json({
       message: `User suspended for ${days} days`,
@@ -588,6 +603,17 @@ router.post('/users/:id/ban', authenticate, allowRoles('content_access_manager')
     user.bannedReason = reason || 'No reason provided';
     user.status = 'REJECTED'; // Set status to REJECTED for banned users
     await user.save();
+
+    // Send ban email (fire-and-forget)
+    EmailServiceClient.sendBanEmail(
+      user.email,
+      user.name,
+      reason || 'No reason provided',
+      'If you believe this ban was issued in error, you may contact your manager or administrator to discuss the matter.',
+      'Content Admin Portal'
+    ).catch((error) => {
+      console.error('Failed to send ban email:', error);
+    });
 
     return res.status(200).json({
       message: 'User banned successfully',

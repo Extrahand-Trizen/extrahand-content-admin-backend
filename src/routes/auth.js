@@ -9,9 +9,9 @@ const {
   verifyRefreshToken,
 } = require("../utils/jwt");
 const {
-  sendPasswordResetEmail,
   sendEmailVerification,
 } = require("../utils/email");
+const EmailServiceClient = require("../utils/EmailServiceClient");
 import jwt from "jsonwebtoken";
 
 const router = express.Router();
@@ -284,16 +284,32 @@ router.post(
       const resetToken = user.createPasswordResetToken();
       await user.save({ validateBeforeSave: false });
 
-      // Send password reset email
-      const resetURL = `${process.env.CLIENT_URL || "http://localhost:3000"}/reset-password/${resetToken}`;
-      try {
-        await sendPasswordResetEmail(email, resetURL, user.name);
-      } catch (emailError) {
+      // Calculate expiration (24 hours)
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const resetURL = `${process.env.CLIENT_URL || "http://localhost:3000"}/reset-password?token=${resetToken}`;
+      
+      const platformName = 'Content Admin Portal';
+      console.log('=== PASSWORD RESET EMAIL DEBUG ===');
+      console.log('Email:', email);
+      console.log('PlatformName being sent:', platformName);
+      console.log('ResetURL:', resetURL);
+      console.log('ExpiresAt:', expiresAt);
+      
+      // Send password reset email using EmailServiceClient (fire-and-forget)
+      EmailServiceClient.sendPasswordResetEmail(
+        email,
+        resetURL,
+        user.name,
+        expiresAt,
+        platformName
+      ).then((result) => {
+        console.log('Password reset email send result:', result);
+      }).catch((emailError) => {
         console.error("Failed to send password reset email:", emailError);
         // Even if email fails, we still return success for security reasons
         // But log the error for monitoring purposes
         // In production, you might want to use a monitoring service here
-      }
+      });
 
       return res.status(200).json({
         message:

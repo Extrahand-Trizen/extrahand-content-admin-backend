@@ -46,20 +46,38 @@ class EmailServiceClient {
    * @param {Date} expiresAt - Token expiration date (optional)
    * @returns {Promise<{success: boolean, messageId?: string, error?: string}>}
    */
-  async sendPasswordResetEmail(email, resetLink, name, expiresAt) {
+  async sendPasswordResetEmail(email, resetLink, name, expiresAt, platformName) {
     try {
       if (!email || !resetLink) {
         throw new Error('Email and resetLink are required');
       }
 
+      // Ensure platformName is always set for content admin
+      const finalPlatformName = platformName || 'Content Admin Portal';
+      console.log('=== EmailServiceClient.sendPasswordResetEmail ===');
+      console.log('Received platformName parameter:', platformName);
+      console.log('Final platformName being sent:', finalPlatformName);
+      console.log('Request payload:', {
+        email,
+        resetLink,
+        name: name || email.split('@')[0],
+        expiresAt: expiresAt ? expiresAt.toISOString() : undefined,
+        platformName: finalPlatformName,
+      });
+      
+      const requestBody = {
+        email,
+        resetLink,
+        name: name || email.split('@')[0],
+        expiresAt: expiresAt ? expiresAt.toISOString() : undefined,
+        platformName: finalPlatformName, // Explicitly set platformName
+      };
+      
+      console.log('Full request body:', JSON.stringify(requestBody, null, 2));
+      
       const response = await this.getAxiosInstance().post(
         '/api/v1/email/password-reset',
-        {
-          email,
-          resetLink,
-          name: name || email.split('@')[0],
-          expiresAt: expiresAt ? expiresAt.toISOString() : undefined,
-        }
+        requestBody
       );
 
       if (response.data && response.data.success) {
@@ -99,7 +117,7 @@ class EmailServiceClient {
    * @param {string} contactInfo - Contact information for appeals (optional)
    * @returns {Promise<{success: boolean, messageId?: string, error?: string}>}
    */
-  async sendSuspensionEmail(email, name, suspendedUntil, reason, daysRemaining, contactInfo) {
+  async sendSuspensionEmail(email, name, suspendedUntil, reason, daysRemaining, contactInfo, platformName) {
     try {
       if (!email || !name || !suspendedUntil || !reason) {
         throw new Error('Email, name, suspendedUntil, and reason are required');
@@ -114,6 +132,7 @@ class EmailServiceClient {
           reason,
           daysRemaining: daysRemaining || Math.ceil((suspendedUntil.getTime() - Date.now()) / (1000 * 60 * 60 * 24)),
           contactInfo: contactInfo || 'Please contact your manager or administrator for assistance.',
+          platformName: platformName || 'Content Admin Portal',
         }
       );
 
@@ -154,7 +173,7 @@ class EmailServiceClient {
    * @param {string} contactInfo - Contact information for appeals (optional)
    * @returns {Promise<{success: boolean, messageId?: string, error?: string}>}
    */
-  async sendBanEmail(email, name, reason, contactInfo) {
+  async sendBanEmail(email, name, reason, contactInfo, platformName) {
     try {
       if (!email || !name || !reason) {
         throw new Error('Email, name, and reason are required');
@@ -167,6 +186,7 @@ class EmailServiceClient {
           name,
           reason,
           contactInfo: contactInfo || 'Please contact your manager or administrator for assistance.',
+          platformName: platformName || 'Content Admin Portal',
         }
       );
 
