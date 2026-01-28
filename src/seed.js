@@ -39,6 +39,14 @@ const testUsers = [
     role: 'content_access_manager',
     status: 'APPROVED',
     emailVerified: true,
+  },
+  {
+    name: 'Content Access Manager',
+    email: 'cam@extrahand.in',
+    password: 'cam@123',
+    role: 'content_access_manager',
+    status: 'APPROVED',
+    emailVerified: true,
   }
 ];
 
@@ -97,6 +105,10 @@ async function seedDatabase() {
     console.log('3. Content Access Manager:');
     console.log('   Email: contentaccessmanager@extrahand.in');
     console.log('   Password: content@123');
+    console.log('   Role: content_access_manager\n');
+    console.log('4. Content Access Manager (Production):');
+    console.log('   Email: cam@extrahand.in');
+    console.log('   Password: cam@123');
     console.log('   Role: content_access_manager\n');
 
     // Close connection
