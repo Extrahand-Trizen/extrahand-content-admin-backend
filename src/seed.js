@@ -9,41 +9,9 @@ const SALT_ROUNDS = 12;
 // Test users to create
 const testUsers = [
   {
-    name: 'Content Reviewer',
-    email: 'reviewer@gmail.com',
-    password: 'Reviewer123!',
-    role: 'reviewer',
-    status: 'APPROVED',
-    emailVerified: true,
-  },
-  {
-    name: 'Content Writer',
-    email: 'writer@gmail.com',
-    password: 'Writer123!',
-    role: 'writer',
-    status: 'APPROVED',
-    emailVerified: true,
-  },
-  {
     name: 'Content Access Manager',
-    email: 'contentaccessmanager@extrahand.in',
-    password: 'content@123',
-    role: 'content_access_manager',
-    status: 'APPROVED',
-    emailVerified: true,
-  },
-  {
-    name: 'Content Access Manager',
-    email: 'cam@gmail.com',
-    password: 'content@123',
-    role: 'content_access_manager',
-    status: 'APPROVED',
-    emailVerified: true,
-  },
-  {
-    name: 'Content Access Manager',
-    email: 'cam@extrahand.in',
-    password: 'cam@123',
+    email: 'contentmanager@extrahand.in',
+    password: 'contentmanager@123',
     role: 'content_access_manager',
     status: 'APPROVED',
     emailVerified: true,
