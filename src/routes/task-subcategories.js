@@ -3,10 +3,11 @@ const router = express.Router();
 const TaskSubcategory = require('../models/TaskSubcategory');
 const TaskCategory = require('../models/TaskCategory');
 const authenticate = require('../middleware/auth');
+const optionalAuth = require('../middleware/auth').optionalAuth;
 const allowRoles = require('../middleware/roles');
 
 // GET - Fetch all subcategories or a single subcategory by slug
-router.get('/', async (req, res) => {
+router.get('/', optionalAuth, async (req, res) => {
   try {
     const { slug, categorySlug } = req.query;
 
@@ -21,14 +22,25 @@ router.get('/', async (req, res) => {
       return res.status(200).json(subcategory);
     }
 
+    const isContentAccessManager = req.user && req.user.role === 'content_access_manager';
+    const isReviewer = req.user && req.user.role === 'reviewer';
+    let filter;
+    if (isContentAccessManager) {
+      filter = {};
+    } else if (isReviewer) {
+      filter = { status: { $in: ['PENDING_APPROVAL', 'APPROVED', 'PUBLISHED', 'REJECTED'] } };
+    } else {
+      filter = { isPublished: true };
+    }
+
     if (categorySlug) {
-      const subcategories = await TaskSubcategory.find({ categorySlug, isPublished: true })
+      const subcategories = await TaskSubcategory.find({ categorySlug, ...filter })
         .populate('createdBy', 'name email')
         .sort({ createdAt: -1 });
       return res.status(200).json(subcategories);
     }
 
-    const subcategories = await TaskSubcategory.find({ isPublished: true })
+    const subcategories = await TaskSubcategory.find(filter)
       .populate('createdBy', 'name email')
       .sort({ createdAt: -1 });
     return res.status(200).json(subcategories);
@@ -296,18 +308,18 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_acces
         status: { $in: ['DRAFT', 'PENDING_APPROVAL', 'REJECTED'] }
       });
 
-      // Prepare clean data
+      // Prepare clean data; preserve profileImage so image updates persist
       if (updateData.staticTasks && Array.isArray(updateData.staticTasks)) {
         updateData.staticTasks = updateData.staticTasks.map(task => {
-          const { profileImageFile, ...cleanTask } = task;
-          return cleanTask;
+          const { profileImageFile, ...rest } = task;
+          return { ...rest, profileImage: rest.profileImage !== undefined ? rest.profileImage : '' };
         });
       }
 
       if (updateData.topTaskers && Array.isArray(updateData.topTaskers)) {
         updateData.topTaskers = updateData.topTaskers.map(tasker => {
-          const { profileImageFile, ...cleanTasker } = tasker;
-          return cleanTasker;
+          const { profileImageFile, ...rest } = tasker;
+          return { ...rest, profileImage: rest.profileImage !== undefined ? rest.profileImage : '' };
         });
       }
 
@@ -367,11 +379,11 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_acces
 
     // For DRAFT, PENDING, or REJECTED status - direct edit is allowed
     if (updateData.slug) {
-      const existingSubcategory = await TaskSubcategory.findOne({
+      const slugConflict = await TaskSubcategory.findOne({
         slug: updateData.slug,
         _id: { $ne: id },
       });
-      if (existingSubcategory) {
+      if (slugConflict) {
         return res.status(409).json({
           error: 'A subcategory with this slug already exists',
         });
@@ -380,32 +392,36 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_acces
 
     if (updateData.staticTasks && Array.isArray(updateData.staticTasks)) {
       updateData.staticTasks = updateData.staticTasks.map(task => {
-        const { profileImageFile, ...cleanTask } = task;
-        return cleanTask;
+        const { profileImageFile, ...rest } = task;
+        return { ...rest, profileImage: rest.profileImage !== undefined ? rest.profileImage : '' };
       });
     }
 
     if (updateData.topTaskers && Array.isArray(updateData.topTaskers)) {
       updateData.topTaskers = updateData.topTaskers.map(tasker => {
-        const { profileImageFile, ...cleanTasker } = tasker;
-        return cleanTasker;
+        const { profileImageFile, ...rest } = tasker;
+        return { ...rest, profileImage: rest.profileImage !== undefined ? rest.profileImage : '' };
       });
     }
 
     // If subcategory was rejected, move back to draft on edit
-    if (existingSubcategory.status === 'REJECTED' && req.user.role === 'writer') {
+    const docToUpdate = await TaskSubcategory.findById(id);
+    if (!docToUpdate) {
+      return res.status(404).json({ error: 'Subcategory not found' });
+    }
+    if (docToUpdate.status === 'REJECTED' && req.user.role === 'writer') {
       updateData.status = 'DRAFT';
       updateData.reviewNotes = '';
     }
 
-    const subcategory = await TaskSubcategory.findByIdAndUpdate(id, updateData, {
-      new: true,
-      runValidators: true,
+    // Assign and save so nested arrays (topTaskers/staticTasks with profileImage) persist correctly
+    Object.keys(updateData).forEach((key) => {
+      if (key !== '_id' && key !== 'createdBy') {
+        docToUpdate[key] = updateData[key];
+      }
     });
-
-    if (!subcategory) {
-      return res.status(404).json({ error: 'Subcategory not found' });
-    }
+    await docToUpdate.save();
+    const subcategory = await TaskSubcategory.findById(id).lean();
 
     return res.status(200).json({
       message: 'Subcategory updated successfully',

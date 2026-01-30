@@ -66,8 +66,18 @@ router.get('/', optionalAuth, async (req, res) => {
       return res.status(404).json({ error: 'Item not found' });
     }
 
-    // Fetch only published categories (unpublished must not appear on main website)
-    const categories = await TaskCategory.find({ isPublished: true })
+    // List: content_access_manager = all; reviewer = pending + approved + published + rejected (no draft); unauthenticated = published only
+    const isContentAccessManager = req.user && req.user.role === 'content_access_manager';
+    const isReviewer = req.user && req.user.role === 'reviewer';
+    let filter;
+    if (isContentAccessManager) {
+      filter = {};
+    } else if (isReviewer) {
+      filter = { status: { $in: ['PENDING_APPROVAL', 'APPROVED', 'PUBLISHED', 'REJECTED'] } };
+    } else {
+      filter = { isPublished: true };
+    }
+    const categories = await TaskCategory.find(filter)
       .populate('createdBy', 'name email')
       .sort({ name: 1 });
     return res.status(200).json(categories);
@@ -453,8 +463,8 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_acces
 
       if (updateData.topTaskers && Array.isArray(updateData.topTaskers)) {
         updateData.topTaskers = updateData.topTaskers.map(tasker => {
-          const { profileImageFile, ...cleanTasker } = tasker;
-          return cleanTasker;
+          const { profileImageFile, ...rest } = tasker;
+          return { ...rest, profileImage: rest.profileImage !== undefined ? rest.profileImage : '' };
         });
       }
 
@@ -539,15 +549,15 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_acces
 
     if (updateData.staticTasks && Array.isArray(updateData.staticTasks)) {
       updateData.staticTasks = updateData.staticTasks.map(task => {
-        const { profileImageFile, ...cleanTask } = task;
-        return cleanTask;
+        const { profileImageFile, ...rest } = task;
+        return { ...rest, profileImage: rest.profileImage !== undefined ? rest.profileImage : '' };
       });
     }
 
     if (updateData.topTaskers && Array.isArray(updateData.topTaskers)) {
       updateData.topTaskers = updateData.topTaskers.map(tasker => {
-        const { profileImageFile, ...cleanTasker } = tasker;
-        return cleanTasker;
+        const { profileImageFile, ...rest } = tasker;
+        return { ...rest, profileImage: rest.profileImage !== undefined ? rest.profileImage : '' };
       });
     }
 
@@ -557,10 +567,14 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_acces
       updateData.reviewNotes = '';
     }
 
-    const category = await TaskCategory.findByIdAndUpdate(id, updateData, {
-      new: true,
-      runValidators: true,
+    // Assign and save so nested arrays (topTaskers/staticTasks with profileImage) persist correctly
+    Object.keys(updateData).forEach((key) => {
+      if (key !== '_id' && key !== 'createdBy') {
+        existingCategory[key] = updateData[key];
+      }
     });
+    await existingCategory.save();
+    const category = await TaskCategory.findById(id).lean();
 
     return res.status(200).json({
       message: 'Category updated successfully',

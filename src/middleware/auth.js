@@ -11,7 +11,7 @@ module.exports = async function auth(req, res, next) {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
-    const payload = verifyAccessToken(token);
+    const payload = verifyAccessToken(token); 
     const user = await User.findById(payload.sub);
 
     if (!user) {

@@ -51,10 +51,11 @@ router.get('/articles/all', authenticate, allowRoles('reviewer', 'content_access
     let filter = {};
 
     // Reviewers and content_access_managers see all articles (no filter by createdBy)
-    // This ensures they can see articles created by any writer
-
+    // Reviewers must not see drafts (only submitted and beyond); content_access_manager sees all for transparency
     if (status) {
       filter.status = status;
+    } else if (req.user.role === 'reviewer') {
+      filter.status = { $in: ['PENDING_APPROVAL', 'APPROVED', 'PUBLISHED', 'REJECTED'] };
     }
 
     // Pagination support - default to 50 items per page
@@ -298,14 +299,6 @@ router.put('/users/:id/role', authenticate, allowRoles('content_access_manager')
       return res.status(400).json({ error: 'Invalid role' });
     }
 
-    // Single Reviewer Constraint: Check if a reviewer already exists
-    if (role === 'reviewer') {
-      const existingReviewer = await User.findOne({ role: 'reviewer', _id: { $ne: id } });
-      if (existingReviewer) {
-        return res.status(400).json({ error: 'A reviewer already exists. Only one reviewer is allowed in the system.' });
-      }
-    }
-
     const user = await User.findById(id);
 
     if (!user) {
@@ -412,14 +405,6 @@ router.post('/users', authenticate, allowRoles('content_access_manager'), async 
 
     if (!['writer', 'reviewer'].includes(role)) {
       return res.status(400).json({ error: 'Invalid role' });
-    }
-
-    // Single Reviewer Constraint: Check if a reviewer already exists
-    if (role === 'reviewer') {
-      const existingReviewer = await User.findOne({ role: 'reviewer' });
-      if (existingReviewer) {
-        return res.status(400).json({ error: 'A reviewer already exists. Only one reviewer is allowed in the system.' });
-      }
     }
 
     // Check if user exists
@@ -1051,6 +1036,8 @@ router.get('/categories/all', authenticate, allowRoles('reviewer', 'content_acce
 
     if (status) {
       filter.status = status;
+    } else if (req.user.role === 'reviewer') {
+      filter.status = { $in: ['PENDING_APPROVAL', 'APPROVED', 'PUBLISHED', 'REJECTED'] };
     }
 
     // Pagination support - default to 50 items per page
@@ -1269,6 +1256,8 @@ router.get('/subcategories/all', authenticate, allowRoles('reviewer', 'content_a
 
     if (status) {
       filter.status = status;
+    } else if (req.user.role === 'reviewer') {
+      filter.status = { $in: ['PENDING_APPROVAL', 'APPROVED', 'PUBLISHED', 'REJECTED'] };
     }
 
     // Pagination support - default to 50 items per page
