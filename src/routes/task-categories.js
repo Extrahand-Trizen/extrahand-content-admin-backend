@@ -3,15 +3,41 @@ const router = express.Router();
 const TaskCategory = require('../models/TaskCategory');
 const TaskSubcategory = require('../models/TaskSubcategory');
 const authenticate = require('../middleware/auth');
+const optionalAuth = require('../middleware/auth').optionalAuth;
 const allowRoles = require('../middleware/roles');
 
-// GET - Fetch all categories or a single category by slug (PUBLIC - no auth required)
-router.get('/', async (req, res) => {
+// GET - Fetch all categories or a single category by slug (PUBLIC; optional auth for draft preview)
+router.get('/', optionalAuth, async (req, res) => {
   try {
     const { slug } = req.query;
 
     if (slug) {
-      // 1. Try to find published category only (unpublished must not be visible on main website)
+      // If authenticated writer/reviewer/manager, allow viewing own or any draft by slug
+      if (req.user) {
+        const allowedRoles = ['writer', 'reviewer', 'content_access_manager'];
+        if (allowedRoles.includes(req.user.role)) {
+          let item = await TaskCategory.findOne({ slug }).populate('createdBy', 'name email');
+          if (item) {
+            const isCreator = item.createdBy && item.createdBy._id && item.createdBy._id.toString() === req.user._id.toString();
+            const isManager = ['reviewer', 'content_access_manager'].includes(req.user.role);
+            if (isCreator || isManager) return res.status(200).json(item);
+          }
+          let subcategory = await TaskSubcategory.findOne({ slug }).populate('createdBy', 'name email');
+          if (subcategory) {
+            const isCreator = subcategory.createdBy && subcategory.createdBy._id && subcategory.createdBy._id.toString() === req.user._id.toString();
+            const isManager = ['reviewer', 'content_access_manager'].includes(req.user.role);
+            if (isCreator || isManager) {
+              let parentCategory = null;
+              if (subcategory.categorySlug) parentCategory = await TaskCategory.findOne({ slug: subcategory.categorySlug });
+              const subcategoryObj = subcategory.toObject();
+              subcategoryObj.categoryName = parentCategory ? parentCategory.name : subcategory.name;
+              return res.status(200).json(subcategoryObj);
+            }
+          }
+        }
+      }
+
+      // Public: published category only
       const item = await TaskCategory.findOne({ slug, isPublished: true })
         .populate('createdBy', 'name email');
 
@@ -19,27 +45,21 @@ router.get('/', async (req, res) => {
         return res.status(200).json(item);
       }
 
-      // 2. Try to find published subcategory only
+      // Public: published subcategory only
       const subcategory = await TaskSubcategory.findOne({ slug, isPublished: true })
         .populate('createdBy', 'name email');
 
       if (subcategory) {
-        // Fetch parent category to get its name
         let parentCategory = null;
         if (subcategory.categorySlug) {
           parentCategory = await TaskCategory.findOne({ slug: subcategory.categorySlug });
         }
-
         const subcategoryObj = subcategory.toObject();
         if (parentCategory) {
           subcategoryObj.categoryName = parentCategory.name;
         } else {
           subcategoryObj.categoryName = subcategory.name;
         }
-
-        // Add type for frontend if needed, but the user wants "no differentiation"
-        // subcategoryObj.type = 'Subcategory'; 
-
         return res.status(200).json(subcategoryObj);
       }
 
