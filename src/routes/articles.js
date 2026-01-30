@@ -1,12 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const Article = require('../models/Article');
+const User = require('../models/User');
 const authenticate = require('../middleware/auth');
+const optionalAuth = require('../middleware/auth').optionalAuth;
 const allowRoles = require('../middleware/roles');
+const { verifyAccessToken } = require('../utils/jwt');
 
-// GET - Fetch all articles or a single article by ID (Public for published, authenticated for others)
+// GET - Fetch all articles or a single article by ID (Public for published, optional auth for drafts)
 // Returns format compatible with support frontend: { success: true, data: articles }
-router.get('/', async (req, res) => {
+router.get('/', optionalAuth, async (req, res) => {
   try {
     const { id, category, published, limit, page, search } = req.query;
 
@@ -24,8 +27,23 @@ router.get('/', async (req, res) => {
         });
       }
 
-      // Only show published articles to public, or any status to authenticated users
-      if (!article.isPublished && !req.user) {
+      // Draft: allow if req.user set by optionalAuth, or verify Bearer token inline
+      let isAuthenticated = !!req.user;
+      if (!article.isPublished && !isAuthenticated) {
+        const authHeader = req.headers.authorization || '';
+        const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+        if (token) {
+          try {
+            const payload = verifyAccessToken(token);
+            const user = await User.findById(payload.sub);
+            if (user) {
+              req.user = user;
+              isAuthenticated = true;
+            }
+          } catch (_) {}
+        }
+      }
+      if (!article.isPublished && !isAuthenticated) {
         return res.status(403).json({ 
           success: false,
           error: 'Article not accessible' 
