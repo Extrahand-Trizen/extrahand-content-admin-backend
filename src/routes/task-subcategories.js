@@ -11,10 +11,11 @@ router.get('/', async (req, res) => {
     const { slug, categorySlug } = req.query;
 
     if (slug) {
-      let subcategory = await TaskSubcategory.findOne({ slug, isPublished: true });
+      let subcategory = await TaskSubcategory.findOne({ slug, isPublished: true })
+        .populate('createdBy', 'name email');
 
       if (!subcategory) {
-        subcategory = await TaskSubcategory.findOne({ slug });
+        subcategory = await TaskSubcategory.findOne({ slug }).populate('createdBy', 'name email');
       }
 
       if (!subcategory) {
@@ -24,11 +25,15 @@ router.get('/', async (req, res) => {
     }
 
     if (categorySlug) {
-      const subcategories = await TaskSubcategory.find({ categorySlug }).sort({ createdAt: -1 });
+      const subcategories = await TaskSubcategory.find({ categorySlug })
+        .populate('createdBy', 'name email')
+        .sort({ createdAt: -1 });
       return res.status(200).json(subcategories);
     }
 
-    const subcategories = await TaskSubcategory.find({}).sort({ createdAt: -1 });
+    const subcategories = await TaskSubcategory.find({})
+      .populate('createdBy', 'name email')
+      .sort({ createdAt: -1 });
     return res.status(200).json(subcategories);
   } catch (error) {
     if (process.env.NODE_ENV === 'development') {
@@ -37,6 +42,22 @@ router.get('/', async (req, res) => {
     return res.status(500).json({ error: 'Failed to fetch subcategories' });
   }
 });
+
+// GET - Fetch only subcategories created by the current user (writer only) - also exported for explicit registration in server
+async function mineHandler(req, res) {
+  try {
+    const subcategories = await TaskSubcategory.find({ createdBy: req.user._id })
+      .populate('createdBy', 'name email')
+      .sort({ createdAt: -1 });
+    return res.status(200).json(subcategories);
+  } catch (error) {
+    if (process.env.NODE_ENV === 'development') {
+      console.error('Error fetching my subcategories:', error);
+    }
+    return res.status(500).json({ error: 'Failed to fetch subcategories' });
+  }
+}
+router.get('/mine', authenticate, allowRoles('writer'), mineHandler);
 
 // POST - Create a new subcategory (Writer and Manager only)
 router.post('/', authenticate, allowRoles('writer', 'reviewer', 'content_access_manager'), async (req, res) => {
@@ -475,4 +496,5 @@ router.post('/submit/:id', authenticate, allowRoles('writer', 'reviewer', 'conte
 });
 
 module.exports = router;
+module.exports.mineHandler = mineHandler;
 

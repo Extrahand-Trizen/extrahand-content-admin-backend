@@ -13,6 +13,9 @@ const taskSubcategoriesRouter = require('./routes/task-subcategories');
 const authRouter = require('./routes/auth');
 const articlesRouter = require('./routes/articles');
 const adminRouter = require('./routes/admin');
+const authenticate = require('./middleware/auth');
+const allowRoles = require('./middleware/roles');
+const analyticsHandler = adminRouter.analyticsHandler;
 
 import {Request, Response, NextFunction} from 'express';
 import invitationRouter from './routes/invitations';
@@ -72,12 +75,19 @@ const authLimiter = rateLimit({
   limit: 100,
 });
 
-// Routes
+// Routes - register /mine before routers so GET /api/task-categories/mine and /api/task-subcategories/mine always match
+const taskCategoriesMineHandler = taskCategoriesRouter.mineHandler;
+const taskSubcategoriesMineHandler = taskSubcategoriesRouter.mineHandler;
+app.get('/api/task-categories/mine', authenticate, allowRoles('writer'), taskCategoriesMineHandler);
+app.get('/api/task-subcategories/mine', authenticate, allowRoles('writer'), taskSubcategoriesMineHandler);
+
 app.use('/auth', authRouter);
 app.use('/api/pages', pagesRouter);
 app.use('/api/task-categories', taskCategoriesRouter);
 app.use('/api/task-subcategories', taskSubcategoriesRouter);
 app.use('/api/articles', articlesRouter);
+// Explicit analytics route so GET /api/admin/analytics always matches (avoids 404)
+app.get('/api/admin/analytics', authenticate, allowRoles('content_access_manager'), analyticsHandler);
 app.use('/api/admin', adminRouter);
 app.use('/api/invitation', invitationRouter);
 

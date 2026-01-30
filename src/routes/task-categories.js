@@ -12,9 +12,10 @@ router.get('/', async (req, res) => {
 
     if (slug) {
       // 1. Try to find in TaskCategory first
-      let item = await TaskCategory.findOne({ slug, isPublished: true });
+      let item = await TaskCategory.findOne({ slug, isPublished: true })
+        .populate('createdBy', 'name email');
       if (!item) {
-        item = await TaskCategory.findOne({ slug });
+        item = await TaskCategory.findOne({ slug }).populate('createdBy', 'name email');
       }
 
       if (item) {
@@ -50,8 +51,10 @@ router.get('/', async (req, res) => {
       return res.status(404).json({ error: 'Item not found' });
     }
 
-    // Fetch all categories (public endpoint - returns all categories)
-    const categories = await TaskCategory.find({}).sort({ name: 1 }); // Sort by name for better UX
+    // Fetch all categories (public endpoint - returns all categories), with creator for "written by" tracking
+    const categories = await TaskCategory.find({})
+      .populate('createdBy', 'name email')
+      .sort({ name: 1 }); // Sort by name for better UX
     return res.status(200).json(categories);
   } catch (error) {
     if (process.env.NODE_ENV === 'development') {
@@ -60,6 +63,22 @@ router.get('/', async (req, res) => {
     return res.status(500).json({ error: 'Failed to fetch categories' });
   }
 });
+
+// GET - Fetch only categories created by the current user (writer only) - also exported for explicit registration in server
+async function mineHandler(req, res) {
+  try {
+    const categories = await TaskCategory.find({ createdBy: req.user._id })
+      .populate('createdBy', 'name email')
+      .sort({ name: 1 });
+    return res.status(200).json(categories);
+  } catch (error) {
+    if (process.env.NODE_ENV === 'development') {
+      console.error('Error fetching my categories:', error);
+    }
+    return res.status(500).json({ error: 'Failed to fetch categories' });
+  }
+}
+router.get('/mine', authenticate, allowRoles('writer'), mineHandler);
 
 // POST - Create a new category (Writer and Manager only)
 router.post('/', authenticate, allowRoles('writer', 'reviewer', 'content_access_manager'), async (req, res) => {
@@ -641,4 +660,5 @@ router.post('/submit/:id', authenticate, allowRoles('writer', 'reviewer', 'conte
 });
 
 module.exports = router;
+module.exports.mineHandler = mineHandler;
 

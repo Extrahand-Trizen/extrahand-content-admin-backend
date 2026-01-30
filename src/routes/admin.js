@@ -826,6 +826,203 @@ router.get('/dashboard/activity', authenticate, allowRoles('reviewer', 'content_
   }
 });
 
+// GET - Content analytics (articles, categories, subcategories by writer and reviewer) - content_access_manager only
+// Handler is also exported for explicit registration in server.ts to avoid 404
+async function analyticsHandler(req, res) {
+  try {
+    const statusGroup = (collectionId) => ({
+      _id: collectionId,
+      total: { $sum: 1 },
+      draft: { $sum: { $cond: [{ $eq: ['$status', 'DRAFT'] }, 1, 0] } },
+      pendingApproval: { $sum: { $cond: [{ $eq: ['$status', 'PENDING_APPROVAL'] }, 1, 0] } },
+      approved: { $sum: { $cond: [{ $eq: ['$status', 'APPROVED'] }, 1, 0] } },
+      rejected: { $sum: { $cond: [{ $eq: ['$status', 'REJECTED'] }, 1, 0] } },
+      published: { $sum: { $cond: [{ $eq: ['$status', 'PUBLISHED'] }, 1, 0] } },
+    });
+    const writerProject = {
+      userId: '$_id',
+      name: '$user.name',
+      email: '$user.email',
+      total: 1,
+      draft: 1,
+      pendingApproval: 1,
+      approved: 1,
+      rejected: 1,
+      published: 1,
+      _id: 0,
+    };
+    const reviewerGroup = (idField) => ({
+      _id: `$${idField}`,
+      totalReviewed: { $sum: 1 },
+      totalApproved: { $sum: { $cond: [{ $eq: ['$status', 'APPROVED'] }, 1, 0] } },
+      totalRejected: { $sum: { $cond: [{ $eq: ['$status', 'REJECTED'] }, 1, 0] } },
+    });
+    const reviewerProject = {
+      userId: '$_id',
+      name: '$user.name',
+      email: '$user.email',
+      totalReviewed: 1,
+      totalApproved: 1,
+      totalRejected: 1,
+      _id: 0,
+    };
+
+    // Articles by writer
+    const articlesByWriterAgg = await Article.aggregate([
+      { $match: { createdBy: { $exists: true, $ne: null } } },
+      { $group: { _id: '$createdBy', ...statusGroup('$createdBy'), totalArticles: { $sum: 1 } } },
+      { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
+      { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+      { $project: { ...writerProject, totalArticles: '$totalArticles' } },
+      { $sort: { totalArticles: -1 } },
+    ]);
+
+    // Articles by reviewer
+    const articlesByReviewerAgg = await Article.aggregate([
+      { $match: { reviewedBy: { $exists: true, $ne: null } } },
+      { $group: reviewerGroup('reviewedBy') },
+      { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
+      { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+      { $project: reviewerProject },
+      { $sort: { totalReviewed: -1 } },
+    ]);
+
+    // Categories by writer
+    const categoriesByWriterAgg = await TaskCategory.aggregate([
+      { $match: { createdBy: { $exists: true, $ne: null } } },
+      { $group: { _id: '$createdBy', ...statusGroup('$createdBy'), totalCategories: { $sum: 1 } } },
+      { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
+      { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+      { $project: { ...writerProject, totalCategories: '$totalCategories' } },
+      { $sort: { totalCategories: -1 } },
+    ]);
+
+    // Categories by reviewer
+    const categoriesByReviewerAgg = await TaskCategory.aggregate([
+      { $match: { reviewedBy: { $exists: true, $ne: null } } },
+      { $group: reviewerGroup('reviewedBy') },
+      { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
+      { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+      { $project: reviewerProject },
+      { $sort: { totalReviewed: -1 } },
+    ]);
+
+    // Subcategories by writer
+    const subcategoriesByWriterAgg = await TaskSubcategory.aggregate([
+      { $match: { createdBy: { $exists: true, $ne: null } } },
+      { $group: { _id: '$createdBy', ...statusGroup('$createdBy'), totalSubcategories: { $sum: 1 } } },
+      { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
+      { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+      { $project: { ...writerProject, totalSubcategories: '$totalSubcategories' } },
+      { $sort: { totalSubcategories: -1 } },
+    ]);
+
+    // Subcategories by reviewer
+    const subcategoriesByReviewerAgg = await TaskSubcategory.aggregate([
+      { $match: { reviewedBy: { $exists: true, $ne: null } } },
+      { $group: reviewerGroup('reviewedBy') },
+      { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
+      { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+      { $project: reviewerProject },
+      { $sort: { totalReviewed: -1 } },
+    ]);
+
+    // Status distributions
+    const [articleStatusDistribution, categoryStatusDistribution, subcategoryStatusDistribution] = await Promise.all([
+      Article.aggregate([
+        { $group: { _id: '$status', count: { $sum: 1 } } },
+        { $project: { status: '$_id', count: 1, _id: 0 } },
+      ]),
+      TaskCategory.aggregate([
+        { $group: { _id: '$status', count: { $sum: 1 } } },
+        { $project: { status: '$_id', count: 1, _id: 0 } },
+      ]),
+      TaskSubcategory.aggregate([
+        { $group: { _id: '$status', count: { $sum: 1 } } },
+        { $project: { status: '$_id', count: 1, _id: 0 } },
+      ]),
+    ]);
+
+    const [
+      totalArticles,
+      totalWithWriter,
+      totalReviewed,
+      totalWriters,
+      totalReviewers,
+      totalCategories,
+      totalSubcategories,
+      totalCategoriesReviewed,
+      totalSubcategoriesReviewed,
+    ] = await Promise.all([
+      Article.countDocuments(),
+      Article.countDocuments({ createdBy: { $exists: true, $ne: null } }),
+      Article.countDocuments({ reviewedBy: { $exists: true, $ne: null } }),
+      User.countDocuments({ role: 'writer' }),
+      User.countDocuments({ role: 'reviewer' }),
+      TaskCategory.countDocuments(),
+      TaskSubcategory.countDocuments(),
+      TaskCategory.countDocuments({ reviewedBy: { $exists: true, $ne: null } }),
+      TaskSubcategory.countDocuments({ reviewedBy: { $exists: true, $ne: null } }),
+    ]);
+
+    const mapWriter = (r, totalKey = 'totalArticles') => ({
+      userId: r.userId?.toString(),
+      name: r.name || 'Unknown',
+      email: r.email || '',
+      total: r[totalKey] ?? r.total ?? 0,
+      draft: r.draft ?? 0,
+      pendingApproval: r.pendingApproval ?? 0,
+      approved: r.approved ?? 0,
+      rejected: r.rejected ?? 0,
+      published: r.published ?? 0,
+    });
+    const mapReviewer = (r) => ({
+      userId: r.userId?.toString(),
+      name: r.name || 'Unknown',
+      email: r.email || '',
+      totalReviewed: r.totalReviewed,
+      totalApproved: r.totalApproved ?? 0,
+      totalRejected: r.totalRejected ?? 0,
+    });
+
+    return res.status(200).json({
+      articlesByWriter: articlesByWriterAgg.map((r) => ({
+        ...mapWriter(r, 'totalArticles'),
+        totalArticles: r.totalArticles ?? r.total,
+      })),
+      articlesByReviewer: articlesByReviewerAgg.map(mapReviewer),
+      categoriesByWriter: categoriesByWriterAgg.map((r) => ({
+        ...mapWriter(r, 'totalCategories'),
+        totalCategories: r.totalCategories ?? r.total,
+      })),
+      categoriesByReviewer: categoriesByReviewerAgg.map(mapReviewer),
+      subcategoriesByWriter: subcategoriesByWriterAgg.map((r) => ({
+        ...mapWriter(r, 'totalSubcategories'),
+        totalSubcategories: r.totalSubcategories ?? r.total,
+      })),
+      subcategoriesByReviewer: subcategoriesByReviewerAgg.map(mapReviewer),
+      summaryMetrics: {
+        totalArticles,
+        totalWithWriter,
+        totalReviewed,
+        totalWriters,
+        totalReviewers,
+        totalCategories,
+        totalSubcategories,
+        totalCategoriesReviewed,
+        totalSubcategoriesReviewed,
+      },
+      statusDistribution: articleStatusDistribution,
+      categoryStatusDistribution,
+      subcategoryStatusDistribution,
+    });
+  } catch (error) {
+    console.error('Error fetching content analytics:', error);
+    return res.status(500).json({ error: 'Failed to fetch analytics' });
+  }
+}
+router.get('/analytics', authenticate, allowRoles('content_access_manager'), analyticsHandler);
+
 // ============================================
 // CATEGORY APPROVAL SYSTEM (Reviewer only)
 // ============================================
@@ -1261,4 +1458,4 @@ router.post('/subcategories/:id/unpublish', authenticate, allowRoles('reviewer',
 });
 
 module.exports = router;
-
+module.exports.analyticsHandler = analyticsHandler;
