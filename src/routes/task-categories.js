@@ -11,22 +11,17 @@ router.get('/', async (req, res) => {
     const { slug } = req.query;
 
     if (slug) {
-      // 1. Try to find in TaskCategory first
-      let item = await TaskCategory.findOne({ slug, isPublished: true })
+      // 1. Try to find published category only (unpublished must not be visible on main website)
+      const item = await TaskCategory.findOne({ slug, isPublished: true })
         .populate('createdBy', 'name email');
-      if (!item) {
-        item = await TaskCategory.findOne({ slug }).populate('createdBy', 'name email');
-      }
 
       if (item) {
         return res.status(200).json(item);
       }
 
-      // 2. Try to find in TaskSubcategory if not found in TaskCategory
-      let subcategory = await TaskSubcategory.findOne({ slug, isPublished: true });
-      if (!subcategory) {
-        subcategory = await TaskSubcategory.findOne({ slug });
-      }
+      // 2. Try to find published subcategory only
+      const subcategory = await TaskSubcategory.findOne({ slug, isPublished: true })
+        .populate('createdBy', 'name email');
 
       if (subcategory) {
         // Fetch parent category to get its name
@@ -51,10 +46,10 @@ router.get('/', async (req, res) => {
       return res.status(404).json({ error: 'Item not found' });
     }
 
-    // Fetch all categories (public endpoint - returns all categories), with creator for "written by" tracking
-    const categories = await TaskCategory.find({})
+    // Fetch only published categories (unpublished must not appear on main website)
+    const categories = await TaskCategory.find({ isPublished: true })
       .populate('createdBy', 'name email')
-      .sort({ name: 1 }); // Sort by name for better UX
+      .sort({ name: 1 });
     return res.status(200).json(categories);
   } catch (error) {
     if (process.env.NODE_ENV === 'development') {

@@ -11,12 +11,9 @@ router.get('/', async (req, res) => {
     const { slug, categorySlug } = req.query;
 
     if (slug) {
-      let subcategory = await TaskSubcategory.findOne({ slug, isPublished: true })
+      // Only return published subcategory (unpublished must not be visible on main website)
+      const subcategory = await TaskSubcategory.findOne({ slug, isPublished: true })
         .populate('createdBy', 'name email');
-
-      if (!subcategory) {
-        subcategory = await TaskSubcategory.findOne({ slug }).populate('createdBy', 'name email');
-      }
 
       if (!subcategory) {
         return res.status(404).json({ error: 'Subcategory not found' });
@@ -25,13 +22,13 @@ router.get('/', async (req, res) => {
     }
 
     if (categorySlug) {
-      const subcategories = await TaskSubcategory.find({ categorySlug })
+      const subcategories = await TaskSubcategory.find({ categorySlug, isPublished: true })
         .populate('createdBy', 'name email')
         .sort({ createdAt: -1 });
       return res.status(200).json(subcategories);
     }
 
-    const subcategories = await TaskSubcategory.find({})
+    const subcategories = await TaskSubcategory.find({ isPublished: true })
       .populate('createdBy', 'name email')
       .sort({ createdAt: -1 });
     return res.status(200).json(subcategories);
