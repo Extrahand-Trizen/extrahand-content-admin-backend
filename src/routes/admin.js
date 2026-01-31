@@ -396,10 +396,10 @@ router.post('/users', authenticate, allowRoles('content_access_manager'), async 
 
     // Email domain validation
     const normalizedEmail = (email || "").toLowerCase().trim();
-    const allowedDomains = ["@gmail.com", "@extrahand.in", "@cognitbotz.com"];
+    const allowedDomains = ["@gmail.com", "@extrahand.in", "@cognitbotz.com", "@trizenventures.com"];
     if (!allowedDomains.some(domain => normalizedEmail.endsWith(domain))) {
       return res.status(400).json({ 
-        error: "Only Gmail addresses (@gmail.com), @extrahand.in, or @cognitbotz.com addresses are allowed" 
+        error: "Only Gmail (@gmail.com), @extrahand.in, @cognitbotz.com, or @trizenventures.com addresses are allowed" 
       });
     }
 

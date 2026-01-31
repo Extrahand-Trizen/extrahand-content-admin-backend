@@ -30,18 +30,16 @@ const invitationSchema = z.object({
       message: "Invalid email address format",
     })
     .refine((email) => {
-      const isValid = email.endsWith("@gmail.com") || 
-                      email.endsWith("@extrahand.in") || 
-                      email.endsWith("@cognitbotz.com");
+      const isValid = email.endsWith("@gmail.com") ||
+                      email.endsWith("@extrahand.in") ||
+                      email.endsWith("@cognitbotz.com") ||
+                      email.endsWith("@trizenventures.com");
       if (!isValid) {
         console.log(`Email validation failed for: "${email}"`);
-        console.log(`Ends with @gmail.com: ${email.endsWith("@gmail.com")}`);
-        console.log(`Ends with @extrahand.in: ${email.endsWith("@extrahand.in")}`);
-        console.log(`Ends with @cognitbotz.com: ${email.endsWith("@cognitbotz.com")}`);
       }
       return isValid;
     }, {
-      message: "Email must end with @gmail.com, @extrahand.in, or @cognitbotz.com",
+      message: "Email must end with @gmail.com, @extrahand.in, @cognitbotz.com, or @trizenventures.com",
     }),
   role: z.enum(["reviewer", "writer"]),
 });

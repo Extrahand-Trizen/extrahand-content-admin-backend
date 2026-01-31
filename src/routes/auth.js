@@ -50,9 +50,9 @@ router.post(
       .normalizeEmail({ gmail_remove_dots: false })
       .custom((value) => {
         const normalizedEmail = (value || "").toLowerCase().trim();
-        const allowedDomains = ["@gmail.com", "@extrahand.in", "@cognitbotz.com"];
+        const allowedDomains = ["@gmail.com", "@extrahand.in", "@cognitbotz.com", "@trizenventures.com"];
         if (!allowedDomains.some(domain => normalizedEmail.endsWith(domain))) {
-          throw new Error("Only Gmail addresses (@gmail.com), @extrahand.in, or @cognitbotz.com addresses are allowed");
+          throw new Error("Only Gmail (@gmail.com), @extrahand.in, @cognitbotz.com, or @trizenventures.com addresses are allowed");
         }
         return true;
       }),
@@ -135,9 +135,9 @@ router.post(
       .normalizeEmail({ gmail_remove_dots: false })
       .custom((value) => {
         const normalizedEmail = (value || "").toLowerCase().trim();
-        const allowedDomains = ["@gmail.com", "@extrahand.in", "@cognitbotz.com"];
+        const allowedDomains = ["@gmail.com", "@extrahand.in", "@cognitbotz.com", "@trizenventures.com"];
         if (!allowedDomains.some(domain => normalizedEmail.endsWith(domain))) {
-          throw new Error("Only Gmail addresses (@gmail.com), @extrahand.in, or @cognitbotz.com addresses are allowed");
+          throw new Error("Only Gmail (@gmail.com), @extrahand.in, @cognitbotz.com, or @trizenventures.com addresses are allowed");
         }
         return true;
       }),
@@ -253,9 +253,9 @@ router.post(
       .normalizeEmail({ gmail_remove_dots: false })
       .custom((value) => {
         const normalizedEmail = (value || "").toLowerCase().trim();
-        const allowedDomains = ["@gmail.com", "@extrahand.in", "@cognitbotz.com"];
+        const allowedDomains = ["@gmail.com", "@extrahand.in", "@cognitbotz.com", "@trizenventures.com"];
         if (!allowedDomains.some(domain => normalizedEmail.endsWith(domain))) {
-          throw new Error("Only Gmail addresses (@gmail.com), @extrahand.in, or @cognitbotz.com addresses are allowed");
+          throw new Error("Only Gmail (@gmail.com), @extrahand.in, @cognitbotz.com, or @trizenventures.com addresses are allowed");
         }
         return true;
       }),
