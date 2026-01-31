@@ -19,6 +19,11 @@ const ArticleSchema = new mongoose.Schema(
       required: [true, 'Article category is required'],
       trim: true,
     },
+    subcategory: {
+      type: String,
+      default: '',
+      trim: true,
+    },
     content: {
       type: String,
       required: [true, 'Article content is required'],
