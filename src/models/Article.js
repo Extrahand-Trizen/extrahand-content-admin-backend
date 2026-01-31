@@ -24,6 +24,11 @@ const ArticleSchema = new mongoose.Schema(
       default: '',
       trim: true,
     },
+    subSubcategory: {
+      type: String,
+      default: '',
+      trim: true,
+    },
     content: {
       type: String,
       required: [true, 'Article content is required'],
@@ -95,6 +100,8 @@ const ArticleSchema = new mongoose.Schema(
 // Index for better search performance
 ArticleSchema.index({ title: 'text', description: 'text', content: 'text' });
 ArticleSchema.index({ category: 1 });
+ArticleSchema.index({ subcategory: 1 });
+ArticleSchema.index({ subSubcategory: 1 });
 ArticleSchema.index({ createdAt: -1 });
 
 module.exports = mongoose.model('Article', ArticleSchema);

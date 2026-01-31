@@ -10,6 +10,7 @@ const connectDB = require('./config/db');
 const pagesRouter = require('./routes/pages');
 const taskCategoriesRouter = require('./routes/task-categories');
 const taskSubcategoriesRouter = require('./routes/task-subcategories');
+const taskSubSubcategoriesRouter = require('./routes/task-sub-subcategories');
 const authRouter = require('./routes/auth');
 const articlesRouter = require('./routes/articles');
 const adminRouter = require('./routes/admin');
@@ -85,6 +86,7 @@ app.use('/auth', authRouter);
 app.use('/api/pages', pagesRouter);
 app.use('/api/task-categories', taskCategoriesRouter);
 app.use('/api/task-subcategories', taskSubcategoriesRouter);
+app.use('/api/task-sub-subcategories', taskSubSubcategoriesRouter);
 app.use('/api/articles', articlesRouter);
 // Explicit analytics route so GET /api/admin/analytics always matches (avoids 404)
 app.get('/api/admin/analytics', authenticate, allowRoles('content_access_manager'), analyticsHandler);
