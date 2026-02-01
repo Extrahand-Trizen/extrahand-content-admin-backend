@@ -109,6 +109,7 @@ router.post(
 
       const existingSubcategory = await TaskSubcategory.findOne({ slug });
       let originalSubcategoryId = null;
+      let docToUpdate = null;
 
       if (existingSubcategory) {
         // If the existing one is published, allow creating a draft version
@@ -120,20 +121,15 @@ router.post(
           });
 
           if (existingDraft) {
-            return res.status(409).json({
-              error:
-                "A draft for this subcategory already exists. Please edit the existing draft.",
-              existingDraftId: existingDraft._id,
-            });
+            // Instead of error, we treat this as an update to the draft (Upsert behavior)
+            docToUpdate = existingDraft;
+          } else {
+            // Link to the original, will create new draft
+            originalSubcategoryId = existingSubcategory._id;
           }
-
-          // Link to the original
-          originalSubcategoryId = existingSubcategory._id;
         } else {
-          // Existing is a draft/pending, so this is a collision
-          return res.status(409).json({
-            error: "A subcategory with this slug already exists",
-          });
+          // Existing is a draft/pending, treat as update to this document (Upsert behavior)
+          docToUpdate = existingSubcategory;
         }
       }
 
@@ -183,6 +179,7 @@ router.post(
         });
       }
 
+      // Construct subcategoryData first to use for both create and update
       const subcategoryData = {
         name: cleanBody.name,
         slug: cleanBody.slug,
@@ -405,27 +402,64 @@ router.post(
           appleStoreImage: "",
           googlePlayImage: "",
         },
+        metaTitle: cleanBody.metaTitle || cleanBody.heroTitle,
         metaDescription: cleanBody.metaDescription || cleanBody.heroDescription,
         isPublished: false, // Always create as unpublished draft initially
         status: "DRAFT", // Always start as DRAFT for new creations via POST
-        originalSubcategoryId, // Link to original if applicable
+        originalSubcategoryIdOriginal: originalSubcategoryId, // Temp storage
         isCurrentVersion: false,
         tasks: cleanBody.tasks || [],
+        // Explicitly set createdBy for new documents
+        createdBy: req.user._id,
       };
 
-      const subcategory = await TaskSubcategory.create(subcategoryData);
-      const savedSubcategory = await TaskSubcategory.findById(
-        subcategory._id,
-      ).lean();
+      if (docToUpdate) {
+        // Upsert/Update Mode
+        Object.keys(subcategoryData).forEach((key) => {
+          // Don't overwrite essential fields if they shouldn't change, but most fields in subcategoryData should update
+          // We do NOT want to overwrite createdBy if it exists, but usually we want to preserve original owner
+          if (key !== "createdBy" && key !== "originalSubcategoryIdOriginal") {
+            docToUpdate[key] = subcategoryData[key];
+          }
+        });
 
-      return res.status(201).json({
-        message: "Subcategory created successfully",
-        subcategory: savedSubcategory,
-      });
+        // Ensure specific fields are set for draft status
+        docToUpdate.status = "DRAFT";
+        docToUpdate.isPublished = false;
+        docToUpdate.reviewNotes = ""; // Clear rejection notes if any
+        docToUpdate.reviewedBy = null;
+        docToUpdate.reviewedAt = null;
+
+        await docToUpdate.save();
+        const updatedSubcategory = await TaskSubcategory.findById(
+          docToUpdate._id,
+        ).lean();
+        return res.status(200).json({
+          message: "Subcategory draft updated successfully",
+          subcategory: updatedSubcategory,
+        });
+      } else {
+        // Create Mode
+        // Use originalSubcategoryId if determined earlier
+        if (originalSubcategoryId) {
+          subcategoryData.originalSubcategoryId = originalSubcategoryId;
+        }
+        delete subcategoryData.originalSubcategoryIdOriginal; // Remove temp field
+
+        const subcategory = await TaskSubcategory.create(subcategoryData);
+        const savedSubcategory = await TaskSubcategory.findById(
+          subcategory._id,
+        ).lean();
+
+        return res.status(201).json({
+          message: "Subcategory created successfully",
+          subcategory: savedSubcategory,
+        });
+      }
     } catch (error) {
-      console.error("Error creating subcategory:", error);
+      console.error("Error creating/updating subcategory:", error);
       return res.status(500).json({
-        error: "Failed to create subcategory",
+        error: "Failed to create/update subcategory",
         details: error.message,
       });
     }
@@ -669,11 +703,9 @@ router.delete(
         subcategory.status === "PUBLISHED" &&
         !["reviewer", "content_access_manager"].includes(req.user.role)
       ) {
-        return res
-          .status(403)
-          .json({
-            error: "Cannot delete published subcategories. Contact manager.",
-          });
+        return res.status(403).json({
+          error: "Cannot delete published subcategories. Contact manager.",
+        });
       }
 
       await TaskSubcategory.findByIdAndDelete(id);
