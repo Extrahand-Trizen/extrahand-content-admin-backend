@@ -473,6 +473,7 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_acces
         Object.keys(updateData).forEach((key) => {
           if (key !== '_id' && key !== 'createdBy' && key !== 'originalCategoryId' && key !== 'isCurrentVersion') {
             existingDraft[key] = updateData[key];
+            existingDraft.markModified(key); // Ensure Mongoose persists nested arrays/objects
           }
         });
 
@@ -571,6 +572,7 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_acces
     Object.keys(updateData).forEach((key) => {
       if (key !== '_id' && key !== 'createdBy') {
         existingCategory[key] = updateData[key];
+        existingCategory.markModified(key); // Ensure Mongoose persists nested arrays/objects (sections)
       }
     });
     await existingCategory.save();

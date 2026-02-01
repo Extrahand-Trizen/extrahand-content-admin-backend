@@ -454,6 +454,7 @@ router.post(
           // We do NOT want to overwrite createdBy if it exists, but usually we want to preserve original owner
           if (key !== "createdBy" && key !== "originalSubcategoryIdOriginal") {
             docToUpdate[key] = subcategoryData[key];
+            docToUpdate.markModified(key); // Ensure Mongoose persists nested arrays/objects (sections)
           }
         });
 
@@ -594,6 +595,7 @@ router.put(
               key !== "isCurrentVersion"
             ) {
               existingDraft[key] = updateData[key];
+              existingDraft.markModified(key); // Ensure Mongoose persists nested arrays/objects (sections)
             }
           });
 
@@ -694,6 +696,7 @@ router.put(
       Object.keys(updateData).forEach((key) => {
         if (key !== "_id" && key !== "createdBy") {
           docToUpdate[key] = updateData[key];
+          docToUpdate.markModified(key); // Ensure Mongoose persists nested arrays/objects (sections)
         }
       });
       await docToUpdate.save();
