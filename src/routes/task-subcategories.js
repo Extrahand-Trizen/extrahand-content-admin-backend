@@ -88,12 +88,43 @@ router.get("/", optionalAuth, async (req, res) => {
 // GET - Fetch only subcategories created by the current user (writer only) - also exported for explicit registration in server
 async function mineHandler(req, res) {
   try {
-    const subcategories = await TaskSubcategory.find({
-      createdBy: req.user._id,
-    })
-      .populate("createdBy", "name email")
+    // Subcategories created by the current user
+    const owned = await TaskSubcategory.find({ createdBy: req.user._id })
+      .populate('createdBy', 'name email')
       .sort({ createdAt: -1 });
-    return res.status(200).json(subcategories);
+
+    // Backfill legacy subcategories that lack createdBy by using parent category ownership
+    const parentCategories = await TaskCategory.find({ createdBy: req.user._id }).select('slug');
+    const parentSlugs = parentCategories.map(cat => cat.slug);
+
+    let inferred = [];
+    if (parentSlugs.length > 0) {
+      inferred = await TaskSubcategory.find({
+        createdBy: { $in: [null, undefined] },
+        categorySlug: { $in: parentSlugs }
+      })
+        .populate('createdBy', 'name email')
+        .sort({ createdAt: -1 });
+
+      if (inferred.length > 0) {
+        const inferredIds = inferred.map(item => item._id);
+        await TaskSubcategory.updateMany(
+          { _id: { $in: inferredIds }, createdBy: { $in: [null, undefined] } },
+          { $set: { createdBy: req.user._id } }
+        );
+      }
+    }
+
+    const combined = [...owned, ...inferred];
+    const seen = new Set();
+    const unique = combined.filter(item => {
+      const id = item._id.toString();
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+
+    return res.status(200).json(unique);
   } catch (error) {
     if (process.env.NODE_ENV === "development") {
       console.error("Error fetching my subcategories:", error);
@@ -138,7 +169,16 @@ router.post(
       if (!parentCategory) {
         return res.status(404).json({
           error: "Parent category not found. Please create the category first.",
-        });
+          message: `The parent category with slug "${categorySlug}" does not exist in the database. Please create the main category before adding subcategories.`,
+        categorySlug: categorySlug,
+        suggestion: 'Create the main category first, then add subcategories to it.'
+      });
+    }
+
+    if (parentCategory.name && parentCategory.name.trim().toLowerCase() === name.trim().toLowerCase()) {
+      return res.status(400).json({
+        error: 'Subcategory name cannot match the parent category name',
+      });
       }
 
       const existingSubcategory = await TaskSubcategory.findOne({ slug });
@@ -213,273 +253,128 @@ router.post(
         });
       }
 
-      // Construct subcategoryData first to use for both create and update
-      const subcategoryData = {
-        name: cleanBody.name,
-        slug: cleanBody.slug,
-        categorySlug: cleanBody.categorySlug,
-        heroTitle: cleanBody.heroTitle,
-        heroDescription: cleanBody.heroDescription,
-        heroImage: cleanBody.heroImage || "",
-        earningsCard: cleanBody.earningsCard || {
-          weekly: { "1-2": "₹240", "3-5": "₹600", "5+": "₹840+" },
-          monthly: { "1-2": "₹1,039", "3-5": "₹2,598", "5+": "₹3,637+" },
-          yearly: { "1-2": "₹12,480", "3-5": "₹31,200", "5+": "₹43,680+" },
+    const subcategoryData = {
+      name: cleanBody.name,
+      slug: cleanBody.slug,
+      categorySlug: cleanBody.categorySlug,
+      createdBy: req.user._id,
+      heroTitle: cleanBody.heroTitle,
+      heroDescription: cleanBody.heroDescription,
+      heroImage: cleanBody.heroImage || '',
+      earningsCard: cleanBody.earningsCard || {
+        weekly: { '1-2': '₹240', '3-5': '₹600', '5+': '₹840+' },
+        monthly: { '1-2': '₹1,039', '3-5': '₹2,598', '5+': '₹3,637+' },
+        yearly: { '1-2': '₹12,480', '3-5': '₹31,200', '5+': '₹43,680+' },
+      },
+      defaultEarnings: cleanBody.defaultEarnings || '₹1,039',
+      earningsPeriod: cleanBody.earningsPeriod || 'per month',
+      earnings1to2: cleanBody.earnings1to2 || '₹1,039',
+      earnings3to5: cleanBody.earnings3to5 || '₹2,598',
+      earnings5plus: cleanBody.earnings5plus || '₹3,637',
+      taskCount: cleanBody.taskCount || '500',
+      location: cleanBody.location || 'India',
+      earningsByJobTypes: cleanBody.earningsByJobTypes || {},
+      disclaimer: cleanBody.disclaimer || 'Based on average accounting task prices. Actual marketplace earnings may vary',
+      whyJoinTitle: cleanBody.whyJoinTitle || 'Why join Extrahand',
+      whyJoinFeatures: whyJoinFeatures,
+      whyJoinButtonText: cleanBody.whyJoinButtonText || 'Join Extrahand',
+      staticTasksSectionTitle: cleanBody.staticTasksSectionTitle || `${cleanBody.name} tasks in India`,
+      staticTasksSectionDescription: cleanBody.staticTasksSectionDescription || 'Check out what tasks people want done near you right now...',
+      staticTasks: Array.isArray(cleanedStaticTasks) ? cleanedStaticTasks : [],
+      browseAllTasksButtonText: cleanBody.browseAllTasksButtonText || 'Browse all tasks',
+      lastUpdatedText: cleanBody.lastUpdatedText || 'Last updated on 4th Dec 2025',
+      earningPotentialTitle: cleanBody.earningPotentialTitle || 'Discover your earning potential in India',
+      earningPotentialDescription: cleanBody.earningPotentialDescription || 'Earn money with every accounting task',
+      earningPotentialButtonText: cleanBody.earningPotentialButtonText || 'Join Extrahand',
+      earningPotentialData: cleanBody.earningPotentialData || {
+        weekly: { '1-2': '₹240', '3-5': '₹600', '5+': '₹840+' },
+        monthly: { '1-2': '₹1039', '3-5': '₹2598', '5+': '₹3637+' },
+        yearly: { '1-2': '₹12480', '3-5': '₹31200', '5+': '₹43680+' },
+      },
+      earningPotentialDisclaimer: cleanBody.earningPotentialDisclaimer || '*Based on average accounting task prices in India. Actual marketplace earnings may vary',
+      incomeOpportunitiesTitle: cleanBody.incomeOpportunitiesTitle || 'Unlock new income opportunities in India',
+      incomeOpportunitiesDescription: cleanBody.incomeOpportunitiesDescription || 'Explore accounting related tasks and discover your financial opportunities',
+      incomeOpportunitiesData: cleanBody.incomeOpportunitiesData || {
+        weekly: [],
+        monthly: [],
+        yearly: [],
+      },
+      incomeOpportunitiesDisclaimer: cleanBody.incomeOpportunitiesDisclaimer || '*Based on average accounting task prices in India. Actual marketplace earnings may vary',
+      howToEarnTitle: cleanBody.howToEarnTitle || 'How to earn money on Extrahand',
+      howToEarnSteps: cleanBody.howToEarnSteps || [
+        {
+          image: '',
+          subtitle: 'Job opportunities that find you',
+          description: 'Set up notifications and be alerted when a nearby, well-matched job is posted. Let customers book you directly by setting up a listing. Provide a great service and work with them again with Contacts.',
         },
-        defaultEarnings: cleanBody.defaultEarnings || "₹1,039",
-        earningsPeriod: cleanBody.earningsPeriod || "per month",
-        earnings1to2: cleanBody.earnings1to2 || "₹1,039",
-        earnings3to5: cleanBody.earnings3to5 || "₹2,598",
-        earnings5plus: cleanBody.earnings5plus || "₹3,637",
-        taskCount: cleanBody.taskCount || "500",
-        location: cleanBody.location || "India",
-        earningsByJobTypes: cleanBody.earningsByJobTypes || {},
-        disclaimer:
-          cleanBody.disclaimer ||
-          "Based on average accounting task prices. Actual marketplace earnings may vary",
-        whyJoinTitle: cleanBody.whyJoinTitle || "Why join Extrahand",
-        whyJoinFeatures: whyJoinFeatures,
-        whyJoinButtonText: cleanBody.whyJoinButtonText || "Join Extrahand",
-        staticTasksSectionTitle:
-          cleanBody.staticTasksSectionTitle ||
-          `${cleanBody.name} tasks in India`,
-        staticTasksSectionDescription:
-          cleanBody.staticTasksSectionDescription ||
-          "Check out what tasks people want done near you right now...",
-        staticTasks: Array.isArray(cleanedStaticTasks)
-          ? cleanedStaticTasks
-          : [],
-        browseAllTasksButtonText:
-          cleanBody.browseAllTasksButtonText || "Browse all tasks",
-        lastUpdatedText:
-          cleanBody.lastUpdatedText || "Last updated on 4th Dec 2025",
-        earningPotentialTitle:
-          cleanBody.earningPotentialTitle ||
-          "Discover your earning potential in India",
-        earningPotentialDescription:
-          cleanBody.earningPotentialDescription ||
-          "Earn money with every accounting task",
-        earningPotentialButtonText:
-          cleanBody.earningPotentialButtonText || "Join Extrahand",
-        earningPotentialData: cleanBody.earningPotentialData || {
-          weekly: { "1-2": "₹240", "3-5": "₹600", "5+": "₹840+" },
-          monthly: { "1-2": "₹1039", "3-5": "₹2598", "5+": "₹3637+" },
-          yearly: { "1-2": "₹12480", "3-5": "₹31200", "5+": "₹43680+" },
+        {
+          image: '',
+          subtitle: 'Set your price',
+          description: 'Found a job you\'re up for? Set your price and make an offer. You can adjust and discuss it later if you need to.',
         },
-        earningPotentialDisclaimer:
-          cleanBody.earningPotentialDisclaimer ||
-          "*Based on average accounting task prices in India. Actual marketplace earnings may vary",
-        incomeOpportunitiesTitle:
-          cleanBody.incomeOpportunitiesTitle ||
-          "Unlock new income opportunities in India",
-        incomeOpportunitiesDescription:
-          cleanBody.incomeOpportunitiesDescription ||
-          "Explore accounting related tasks and discover your financial opportunities",
-        incomeOpportunitiesData: cleanBody.incomeOpportunitiesData || {
-          weekly: [],
-          monthly: [],
-          yearly: [],
+        {
+          image: '',
+          subtitle: 'Work. Get paid. Quickly.',
+          description: 'When tasks are complete, request for payment to be released and money will appear in your account instantly.',
         },
-        incomeOpportunitiesDisclaimer:
-          cleanBody.incomeOpportunitiesDisclaimer ||
-          "*Based on average accounting task prices in India. Actual marketplace earnings may vary",
-        howToEarnTitle:
-          cleanBody.howToEarnTitle || "How to earn money on Extrahand",
-        howToEarnSteps: cleanBody.howToEarnSteps || [
-          {
-            image: "",
-            subtitle: "Job opportunities that find you",
-            description:
-              "Set up notifications and be alerted when a nearby, well-matched job is posted. Let customers book you directly by setting up a listing. Provide a great service and work with them again with Contacts.",
-          },
-          {
-            image: "",
-            subtitle: "Set your price",
-            description:
-              "Found a job you're up for? Set your price and make an offer. You can adjust and discuss it later if you need to.",
-          },
-          {
-            image: "",
-            subtitle: "Work. Get paid. Quickly.",
-            description:
-              "When tasks are complete, request for payment to be released and money will appear in your account instantly.",
-          },
-        ],
-        howToEarnButtonText: cleanBody.howToEarnButtonText || "Post a task",
-        getInspiredTitle:
-          cleanBody.getInspiredTitle ||
-          `Get Inspired: Top ${cleanBody.name} Taskers in India`,
-        getInspiredButtonText:
-          cleanBody.getInspiredButtonText || "Join Extrahand",
-        topTaskers: Array.isArray(cleanedTopTaskers) ? cleanedTopTaskers : [],
-        insuranceCoverTitle:
-          cleanBody.insuranceCoverTitle || "We've got you covered",
-        insuranceCoverDescription:
-          cleanBody.insuranceCoverDescription ||
-          "Whether you're a posting a task or completing a task, you can do both with the peace of mind that Extrahand is there to support.",
-        insuranceCoverButtonText:
-          cleanBody.insuranceCoverButtonText || "Extrahand's insurance cover",
-        insuranceCoverFeatures: cleanBody.insuranceCoverFeatures || [
-          {
-            icon: "human",
-            subtitle: "Public liability insurance",
-            subdescription:
-              "Extrahand Insurance covers you for any accidental injury to the customer or property damage whilst performing certain task activities",
-          },
-          {
-            icon: "star",
-            subtitle: "Top rated insurance",
-            subdescription:
-              "Extrahand Insurance is provided by Chubb Insurance India Limited, one of the world's most reputable, stable and innovative",
-          },
-        ],
-        questionsTitle:
-          cleanBody.questionsTitle || `Top ${cleanBody.name} related questions`,
-        questions: cleanBody.questions || [],
-        waysToEarnTitle:
-          cleanBody.waysToEarnTitle ||
-          `Ways to earn money with ${cleanBody.name} tasks on Extrahand`,
-        waysToEarnContent: cleanBody.waysToEarnContent || [],
-        exploreOtherWaysTitle:
-          cleanBody.exploreOtherWaysTitle ||
-          "Explore other ways to earn money in India",
-        exploreOtherWaysImage: cleanBody.exploreOtherWaysImage || "",
-        exploreOtherWaysTasks: cleanBody.exploreOtherWaysTasks || [],
-        exploreOtherWaysButtonText:
-          cleanBody.exploreOtherWaysButtonText || "Explore more tasks",
-        exploreOtherWaysDisclaimer:
-          cleanBody.exploreOtherWaysDisclaimer ||
-          "*Based on average prices from 1-2 completed tasks in India. Actual marketplace earnings may vary.",
-        topLocationsIcon: cleanBody.topLocationsIcon || "location",
-        topLocationsTitle:
-          cleanBody.topLocationsTitle || "Browse our top locations",
-        topLocationsHeadings: cleanBody.topLocationsHeadings || [
-          "Delhi",
-          "Mumbai",
-          "Kolkata",
-          "Chennai",
-          "Pune",
-          "Surat",
-          "Jaipur",
-          "Bangalore",
-          "Hyderabad",
-          "Ahmedabad",
-          "Noida",
-          "Gurugram",
-        ],
-        browseSimilarTasksIcons: cleanBody.browseSimilarTasksIcons || [
-          "wrench",
-          "brush",
-          "pencil",
-        ],
-        browseSimilarTasksTitle:
-          cleanBody.browseSimilarTasksTitle || "Browse similar tasks near me",
-        browseSimilarTasksHeadings: cleanBody.browseSimilarTasksHeadings || [],
-        footer: cleanBody.footer || {
-          discoverHeading: "Discover",
-          discoverLinks: [
-            "How it works",
-            "Extrahand for business",
-            "Earn money",
-            "Side Hustle Calculator",
-            "Search tasks",
-            "Cost Guides",
-            "Service Guides",
-            "Comparison Guides",
-            "Gift Cards",
-            "Student Discount",
-            "Partners",
-            "New users FAQ",
-          ],
-          companyHeading: "Company",
-          companyLinks: [
-            "About us",
-            "Careers",
-            "Media enquiries",
-            "Community Guidelines",
-            "Tasker Principles",
-            "Terms and Conditions",
-            "Blog",
-            "Contact us",
-            "Privacy policy",
-            "Investors",
-          ],
-          existingMembersHeading: "Existing Members",
-          existingMembersLinks: [
-            "Post a task",
-            "Browse tasks",
-            "Login",
-            "Support centre",
-          ],
-          popularCategoriesHeading: "Popular Categories",
-          popularCategoriesLinks: [
-            "Handyman Services",
-            "Cleaning Services",
-            "Delivery Services",
-            "Removalists",
-            "Gardening Services",
-            "Auto Electricians",
-            "Assembly Services",
-            "All Services",
-          ],
-          popularLocationsHeading: "Popular Locations",
-          popularLocations: [
-            "Chennai",
-            "Pune",
-            "Surat",
-            "Jaipur",
-            "Bangalore",
-            "Hyderabad",
-            "Ahmedabad",
-          ],
-          copyrightText: "Extrahand Limited 2011-2025 ©, All rights reserved",
-          appleStoreImage: "",
-          googlePlayImage: "",
+      ],
+      howToEarnButtonText: cleanBody.howToEarnButtonText || 'Post a task',
+      getInspiredTitle: cleanBody.getInspiredTitle || `Get Inspired: Top ${cleanBody.name} Taskers in India`,
+      getInspiredButtonText: cleanBody.getInspiredButtonText || 'Join Extrahand',
+      topTaskers: Array.isArray(cleanedTopTaskers) ? cleanedTopTaskers : [],
+      insuranceCoverTitle: cleanBody.insuranceCoverTitle || "We've got you covered",
+      insuranceCoverDescription: cleanBody.insuranceCoverDescription || "Whether you're a posting a task or completing a task, you can do both with the peace of mind that Extrahand is there to support.",
+      insuranceCoverButtonText: cleanBody.insuranceCoverButtonText || "Extrahand's insurance cover",
+      insuranceCoverFeatures: cleanBody.insuranceCoverFeatures || [
+        {
+          icon: "human",
+          subtitle: "Public liability insurance",
+          subdescription: "Extrahand Insurance covers you for any accidental injury to the customer or property damage whilst performing certain task activities",
         },
-        metaTitle: cleanBody.metaTitle || cleanBody.heroTitle,
-        metaDescription: cleanBody.metaDescription || cleanBody.heroDescription,
-        isPublished: false, // Always create as unpublished draft initially
-        status: "DRAFT", // Always start as DRAFT for new creations via POST
-        originalSubcategoryIdOriginal: originalSubcategoryId, // Temp storage
-        isCurrentVersion: false,
-        tasks: cleanBody.tasks || [],
-        // Explicitly set createdBy for new documents
-        createdBy: req.user._id,
-      };
-
-      if (docToUpdate) {
-        // Upsert/Update Mode
-        Object.keys(subcategoryData).forEach((key) => {
-          // Don't overwrite essential fields if they shouldn't change, but most fields in subcategoryData should update
-          // We do NOT want to overwrite createdBy if it exists, but usually we want to preserve original owner
-          if (key !== "createdBy" && key !== "originalSubcategoryIdOriginal") {
-            docToUpdate[key] = subcategoryData[key];
-            docToUpdate.markModified(key); // Ensure Mongoose persists nested arrays/objects (sections)
-          }
-        });
-
-        // Ensure specific fields are set for draft status
-        docToUpdate.status = "DRAFT";
-        docToUpdate.isPublished = false;
-        docToUpdate.reviewNotes = ""; // Clear rejection notes if any
-        docToUpdate.reviewedBy = null;
-        docToUpdate.reviewedAt = null;
-
-        await docToUpdate.save();
-        const updatedSubcategory = await TaskSubcategory.findById(
-          docToUpdate._id,
-        ).lean();
-        return res.status(200).json({
-          message: "Subcategory draft updated successfully",
-          subcategory: updatedSubcategory,
-        });
-      } else {
-        // Create Mode
-        // Use originalSubcategoryId if determined earlier
-        if (originalSubcategoryId) {
-          subcategoryData.originalSubcategoryId = originalSubcategoryId;
-        }
-        delete subcategoryData.originalSubcategoryIdOriginal; // Remove temp field
+        {
+          icon: "star",
+          subtitle: "Top rated insurance",
+          subdescription: "Extrahand Insurance is provided by Chubb Insurance India Limited, one of the world's most reputable, stable and innovative",
+        },
+      ],
+      questionsTitle: cleanBody.questionsTitle || `Top ${cleanBody.name} related questions`,
+      questions: cleanBody.questions || [],
+      waysToEarnTitle: cleanBody.waysToEarnTitle || `Ways to earn money with ${cleanBody.name} tasks on Extrahand`,
+      waysToEarnContent: cleanBody.waysToEarnContent || [],
+      exploreOtherWaysTitle: cleanBody.exploreOtherWaysTitle || "Explore other ways to earn money in India",
+      exploreOtherWaysImage: cleanBody.exploreOtherWaysImage || "",
+      exploreOtherWaysTasks: cleanBody.exploreOtherWaysTasks || [],
+      exploreOtherWaysButtonText: cleanBody.exploreOtherWaysButtonText || "Explore more tasks",
+      exploreOtherWaysDisclaimer: cleanBody.exploreOtherWaysDisclaimer || "*Based on average prices from 1-2 completed tasks in India. Actual marketplace earnings may vary.",
+      topLocationsIcon: cleanBody.topLocationsIcon || "location",
+      topLocationsTitle: cleanBody.topLocationsTitle || "Browse our top locations",
+      topLocationsHeadings: cleanBody.topLocationsHeadings || [
+        "Delhi", "Mumbai", "Kolkata", "Chennai", "Pune", "Surat",
+        "Jaipur", "Bangalore", "Hyderabad", "Ahmedabad", "Noida", "Gurugram",
+      ],
+      browseSimilarTasksIcons: cleanBody.browseSimilarTasksIcons || ["wrench", "brush", "pencil"],
+      browseSimilarTasksTitle: cleanBody.browseSimilarTasksTitle || "Browse similar tasks near me",
+      browseSimilarTasksHeadings: cleanBody.browseSimilarTasksHeadings || [],
+      footer: cleanBody.footer || {
+        discoverHeading: "Discover",
+        discoverLinks: ["How it works", "Extrahand for business", "Earn money", "Side Hustle Calculator", "Search tasks", "Cost Guides", "Service Guides", "Comparison Guides", "Gift Cards", "Student Discount", "Partners", "New users FAQ"],
+        companyHeading: "Company",
+        companyLinks: ["About us", "Careers", "Media enquiries", "Community Guidelines", "Tasker Principles", "Terms and Conditions", "Blog", "Contact us", "Privacy policy", "Investors"],
+        existingMembersHeading: "Existing Members",
+        existingMembersLinks: ["Post a task", "Browse tasks", "Login", "Support centre"],
+        popularCategoriesHeading: "Popular Categories",
+        popularCategoriesLinks: ["Handyman Services", "Cleaning Services", "Delivery Services", "Removalists", "Gardening Services", "Auto Electricians", "Assembly Services", "All Services"],
+        popularLocationsHeading: "Popular Locations",
+        popularLocations: ["Chennai", "Pune", "Surat", "Jaipur", "Bangalore", "Hyderabad", "Ahmedabad"],
+        copyrightText: "Extrahand Limited 2011-2025 ©, All rights reserved",
+        appleStoreImage: "",
+        googlePlayImage: "",
+      },
+      metaTitle: cleanBody.metaTitle || cleanBody.heroTitle,
+      metaDescription: cleanBody.metaDescription || cleanBody.heroDescription,
+      isPublished: cleanBody.isPublished !== undefined ? cleanBody.isPublished : false,
+      tasks: cleanBody.tasks || [],
+    };
 
         const subcategory = await TaskSubcategory.create(subcategoryData);
         const savedSubcategory = await TaskSubcategory.findById(
@@ -539,6 +434,18 @@ router.put(
         return res.status(404).json({ error: "Subcategory not found" });
       }
 
+    // Validate against parent category name
+    const effectiveCategorySlug = updateData.categorySlug || existingSubcategory.categorySlug;
+    const effectiveName = updateData.name || existingSubcategory.name;
+    if (effectiveCategorySlug && effectiveName) {
+      const parentCategory = await TaskCategory.findOne({ slug: effectiveCategorySlug });
+      if (parentCategory && parentCategory.name && parentCategory.name.trim().toLowerCase() === effectiveName.trim().toLowerCase()) {
+        return res.status(400).json({
+          error: 'Subcategory name cannot match the parent category name',
+        });
+      }
+    }
+
       // Check permissions: only creator or manager can edit
       if (
         existingSubcategory.createdBy &&
@@ -549,6 +456,12 @@ router.put(
           .status(403)
           .json({ error: "Not authorized to edit this subcategory" });
       }
+
+    // Backfill createdBy for legacy subcategories missing it
+    if (!existingSubcategory.createdBy) {
+      existingSubcategory.createdBy = req.user._id;
+      await existingSubcategory.save();
+    }
 
       // If subcategory is PUBLISHED or APPROVED, create a new draft version for re-approval (writers only)
       if (

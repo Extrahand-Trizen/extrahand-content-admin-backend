@@ -117,11 +117,19 @@ router.post('/', authenticate, allowRoles(['writer', 'reviewer', 'content_access
     });
 
     if (!parentCategory) {
-      return res.status(404).json({ error: 'Parent category not found' });
+      return res.status(404).json({ 
+        error: 'Parent category not found',
+        message: `The parent category with slug "${categorySlug}" does not exist in the database. Please create the main category first.`,
+        categorySlug: categorySlug
+      });
     }
 
     if (!parentSubcategory) {
-      return res.status(404).json({ error: 'Parent subcategory not found' });
+      return res.status(404).json({ 
+        error: 'Parent subcategory not found',
+        message: `The parent subcategory with slug "${subcategorySlug}" does not exist in the database. Please create the subcategory first.`,
+        subcategorySlug: subcategorySlug
+      });
     }
 
     // Check if already exists
