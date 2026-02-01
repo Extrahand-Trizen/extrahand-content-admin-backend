@@ -55,10 +55,43 @@ router.get('/', optionalAuth, async (req, res) => {
 // GET - Fetch only subcategories created by the current user (writer only) - also exported for explicit registration in server
 async function mineHandler(req, res) {
   try {
-    const subcategories = await TaskSubcategory.find({ createdBy: req.user._id })
+    // Subcategories created by the current user
+    const owned = await TaskSubcategory.find({ createdBy: req.user._id })
       .populate('createdBy', 'name email')
       .sort({ createdAt: -1 });
-    return res.status(200).json(subcategories);
+
+    // Backfill legacy subcategories that lack createdBy by using parent category ownership
+    const parentCategories = await TaskCategory.find({ createdBy: req.user._id }).select('slug');
+    const parentSlugs = parentCategories.map(cat => cat.slug);
+
+    let inferred = [];
+    if (parentSlugs.length > 0) {
+      inferred = await TaskSubcategory.find({
+        createdBy: { $in: [null, undefined] },
+        categorySlug: { $in: parentSlugs }
+      })
+        .populate('createdBy', 'name email')
+        .sort({ createdAt: -1 });
+
+      if (inferred.length > 0) {
+        const inferredIds = inferred.map(item => item._id);
+        await TaskSubcategory.updateMany(
+          { _id: { $in: inferredIds }, createdBy: { $in: [null, undefined] } },
+          { $set: { createdBy: req.user._id } }
+        );
+      }
+    }
+
+    const combined = [...owned, ...inferred];
+    const seen = new Set();
+    const unique = combined.filter(item => {
+      const id = item._id.toString();
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+
+    return res.status(200).json(unique);
   } catch (error) {
     if (process.env.NODE_ENV === 'development') {
       console.error('Error fetching my subcategories:', error);
@@ -86,6 +119,15 @@ router.post('/', authenticate, allowRoles('writer', 'reviewer', 'content_access_
     if (!parentCategory) {
       return res.status(404).json({
         error: 'Parent category not found. Please create the category first.',
+        message: `The parent category with slug "${categorySlug}" does not exist in the database. Please create the main category before adding subcategories.`,
+        categorySlug: categorySlug,
+        suggestion: 'Create the main category first, then add subcategories to it.'
+      });
+    }
+
+    if (parentCategory.name && parentCategory.name.trim().toLowerCase() === name.trim().toLowerCase()) {
+      return res.status(400).json({
+        error: 'Subcategory name cannot match the parent category name',
       });
     }
 
@@ -139,6 +181,7 @@ router.post('/', authenticate, allowRoles('writer', 'reviewer', 'content_access_
       name: cleanBody.name,
       slug: cleanBody.slug,
       categorySlug: cleanBody.categorySlug,
+      createdBy: req.user._id,
       heroTitle: cleanBody.heroTitle,
       heroDescription: cleanBody.heroDescription,
       heroImage: cleanBody.heroImage || '',
@@ -295,9 +338,27 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_acces
       return res.status(404).json({ error: 'Subcategory not found' });
     }
 
+    // Validate against parent category name
+    const effectiveCategorySlug = updateData.categorySlug || existingSubcategory.categorySlug;
+    const effectiveName = updateData.name || existingSubcategory.name;
+    if (effectiveCategorySlug && effectiveName) {
+      const parentCategory = await TaskCategory.findOne({ slug: effectiveCategorySlug });
+      if (parentCategory && parentCategory.name && parentCategory.name.trim().toLowerCase() === effectiveName.trim().toLowerCase()) {
+        return res.status(400).json({
+          error: 'Subcategory name cannot match the parent category name',
+        });
+      }
+    }
+
     // Check permissions: only creator or manager can edit
     if (existingSubcategory.createdBy && existingSubcategory.createdBy.toString() !== req.user._id.toString() && req.user.role !== 'reviewer') {
       return res.status(403).json({ error: 'Not authorized to edit this subcategory' });
+    }
+
+    // Backfill createdBy for legacy subcategories missing it
+    if (!existingSubcategory.createdBy) {
+      existingSubcategory.createdBy = req.user._id;
+      await existingSubcategory.save();
     }
 
     // If subcategory is PUBLISHED or APPROVED, create a new draft version for re-approval (writers only)
