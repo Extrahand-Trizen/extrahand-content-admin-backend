@@ -376,16 +376,32 @@ router.post(
       tasks: cleanBody.tasks || [],
     };
 
-        const subcategory = await TaskSubcategory.create(subcategoryData);
-        const savedSubcategory = await TaskSubcategory.findById(
-          subcategory._id,
-        ).lean();
-
-        return res.status(201).json({
-          message: "Subcategory created successfully",
-          subcategory: savedSubcategory,
-        });
+    if (docToUpdate) {
+      const updatePayload = { ...subcategoryData };
+      if (originalSubcategoryId) {
+        updatePayload.originalSubcategoryId = originalSubcategoryId;
       }
+      await TaskSubcategory.findByIdAndUpdate(docToUpdate._id, updatePayload, {
+        new: true,
+        runValidators: true,
+      });
+      const savedSubcategory = await TaskSubcategory.findById(docToUpdate._id).lean();
+      return res.status(200).json({
+        message: "Subcategory updated successfully",
+        subcategory: savedSubcategory,
+      });
+    } else {
+      const createPayload = { ...subcategoryData };
+      if (originalSubcategoryId) {
+        createPayload.originalSubcategoryId = originalSubcategoryId;
+      }
+      const subcategory = await TaskSubcategory.create(createPayload);
+      const savedSubcategory = await TaskSubcategory.findById(subcategory._id).lean();
+      return res.status(201).json({
+        message: "Subcategory created successfully",
+        subcategory: savedSubcategory,
+      });
+    }
     } catch (error) {
       console.error("Error creating/updating subcategory:", error);
       return res.status(500).json({
