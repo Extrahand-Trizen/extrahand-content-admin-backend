@@ -5,6 +5,29 @@ const TaskCategory = require("../models/TaskCategory");
 const authenticate = require("../middleware/auth");
 const optionalAuth = require("../middleware/auth").optionalAuth;
 const allowRoles = require("../middleware/roles");
+const multer = require("multer");
+
+// Configure Multer for memory storage (files will be available in req.files)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
+});
+
+// Helper to set nested properties from form-data field names
+// e.g. "topTaskers[0][profileImage]" -> body.topTaskers[0].profileImage
+const setNestedProperty = (obj, path, value) => {
+  const keys = path.replace(/\]/g, "").split("[");
+  let current = obj;
+  for (let i = 0; i < keys.length - 1; i++) {
+    const key = keys[i];
+    if (!current[key]) {
+      // If we are creating a new path, assume array if next key is numeric
+      current[key] = isNaN(keys[i + 1]) ? {} : [];
+    }
+    current = current[key];
+  }
+  current[keys[keys.length - 1]] = value;
+};
 
 // GET - Fetch all subcategories or a single subcategory by slug
 router.get("/", optionalAuth, async (req, res) => {
@@ -85,8 +108,19 @@ router.post(
   "/",
   authenticate,
   allowRoles("writer", "reviewer", "content_access_manager"),
+  upload.any(),
   async (req, res) => {
     try {
+      // Process uploaded files: Convert buffer to Base64 and assign to body
+      if (req.files && req.files.length > 0) {
+        req.files.forEach((file) => {
+          const base64 = `data:${file.mimetype};base64,${file.buffer.toString(
+            "base64",
+          )}`;
+          setNestedProperty(req.body, file.fieldname, base64);
+        });
+      }
+
       const body = req.body;
       const { imageFile, ...cleanBody } = body;
 
@@ -471,8 +505,19 @@ router.put(
   "/:id",
   authenticate,
   allowRoles("writer", "reviewer", "content_access_manager"),
+  upload.any(),
   async (req, res) => {
     try {
+      // Process uploaded files: Convert buffer to Base64 and assign to body
+      if (req.files && req.files.length > 0) {
+        req.files.forEach((file) => {
+          const base64 = `data:${file.mimetype};base64,${file.buffer.toString(
+            "base64",
+          )}`;
+          setNestedProperty(req.body, file.fieldname, base64);
+        });
+      }
+
       const { id } = req.params; // Get ID from URL params instead of body
       const body = req.body;
       const { imageFile, ...updateData } = body;
