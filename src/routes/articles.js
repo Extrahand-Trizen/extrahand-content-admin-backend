@@ -266,77 +266,34 @@ router.put(
           .json({ error: "Not authorized to edit this article" });
       }
 
-      // If article is PUBLISHED or APPROVED, check if a draft version already exists
+      // If article is PUBLISHED or APPROVED and writer is editing: update in place and move to DRAFT
+      // This avoids creating duplicate entries - the same article transitions to pending approval
       if (
         (article.status === "PUBLISHED" || article.status === "APPROVED") &&
         req.user.role === "writer"
       ) {
-        // Check if there's already a draft version of this article
-        const existingDraft = await Article.findOne({
-          originalArticleId: article._id,
-          status: { $in: ["DRAFT", "PENDING_APPROVAL", "REJECTED"] },
-        });
+        // Update the published article in place - no new document
+        if (title) article.title = title;
+        if (description) article.description = description;
+        if (category) article.category = category;
+        if (subcategory !== undefined) article.subcategory = subcategory;
+        if (subSubcategory !== undefined) article.subSubcategory = subSubcategory;
+        if (content) article.content = content;
+        if (imageUrl !== undefined) article.imageUrl = imageUrl;
+        if (author) article.author = author;
 
-        if (existingDraft) {
-          // Update the existing draft instead of creating a new one
-          existingDraft.title = title || existingDraft.title;
-          existingDraft.description = description || existingDraft.description;
-          existingDraft.category = category || existingDraft.category;
-          existingDraft.subcategory =
-            subcategory !== undefined ? subcategory : existingDraft.subcategory;
-          existingDraft.subSubcategory =
-            subSubcategory !== undefined
-              ? subSubcategory
-              : existingDraft.subSubcategory;
-          existingDraft.content = content || existingDraft.content;
-          existingDraft.imageUrl =
-            imageUrl !== undefined ? imageUrl : existingDraft.imageUrl;
-          existingDraft.author = author || existingDraft.author;
+        // Move from published to draft - writer will submit for approval
+        article.status = "DRAFT";
+        article.isPublished = false;
+        article.originalArticleId = null; // Clear if any (in-place update, not a version)
+        article.reviewNotes = "";
 
-          // If it was rejected, move back to draft
-          if (existingDraft.status === "REJECTED") {
-            existingDraft.status = "DRAFT";
-            existingDraft.reviewNotes = "";
-          }
-
-          await existingDraft.save();
-
-          return res.status(200).json({
-            message:
-              "Draft version updated. Original article remains published.",
-            article: existingDraft,
-            isExistingDraft: true,
-          });
-        }
-
-        // No existing draft found, create a new draft version
-        const newVersion = new Article({
-          title: title || article.title,
-          description: description || article.description,
-          category: category || article.category,
-          subcategory:
-            subcategory !== undefined ? subcategory : article.subcategory,
-          subSubcategory:
-            subSubcategory !== undefined
-              ? subSubcategory
-              : article.subSubcategory,
-          content: content || article.content,
-          imageUrl: imageUrl !== undefined ? imageUrl : article.imageUrl,
-          author: author || article.author,
-          status: "DRAFT",
-          isPublished: false,
-          createdBy: req.user._id,
-          originalArticleId: article._id,
-          isCurrentVersion: false,
-        });
-
-        await newVersion.save();
+        await article.save();
 
         return res.status(200).json({
           message:
-            "New draft version created for approval. Original article remains published.",
-          article: newVersion,
-          isNewVersion: true,
+            "Article updated. Submit for approval when ready. It will appear as pending changes to the existing article.",
+          article,
         });
       }
 
