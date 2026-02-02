@@ -865,7 +865,12 @@ async function analyticsHandler(req, res) {
     // Articles by reviewer
     const articlesByReviewerAgg = await Article.aggregate([
       { $match: { reviewedBy: { $exists: true, $ne: null } } },
-      { $group: reviewerGroup('reviewedBy') },
+      { $group: {
+        _id: '$reviewedBy',
+        totalReviewed: { $sum: 1 },
+        totalApproved: { $sum: { $cond: [{ $in: ['$status', ['APPROVED', 'PUBLISHED']] }, 1, 0] } },
+        totalRejected: { $sum: { $cond: [{ $eq: ['$status', 'REJECTED'] }, 1, 0] } },
+      } },
       { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
       { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
       { $project: reviewerProject },
@@ -885,7 +890,12 @@ async function analyticsHandler(req, res) {
     // Categories by reviewer
     const categoriesByReviewerAgg = await TaskCategory.aggregate([
       { $match: { reviewedBy: { $exists: true, $ne: null } } },
-      { $group: reviewerGroup('reviewedBy') },
+      { $group: {
+        _id: '$reviewedBy',
+        totalReviewed: { $sum: 1 },
+        totalApproved: { $sum: { $cond: [{ $in: ['$status', ['APPROVED', 'PUBLISHED']] }, 1, 0] } },
+        totalRejected: { $sum: { $cond: [{ $eq: ['$status', 'REJECTED'] }, 1, 0] } },
+      } },
       { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
       { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
       { $project: reviewerProject },
@@ -894,7 +904,10 @@ async function analyticsHandler(req, res) {
 
     // Subcategories by writer
     const subcategoriesByWriterAgg = await TaskSubcategory.aggregate([
-      { $match: { createdBy: { $exists: true, $ne: null } } },
+      { $match: { 
+        createdBy: { $exists: true, $ne: null },
+        categorySlug: { $exists: true, $ne: null, $ne: '' }
+      } },
       { $group: { _id: '$createdBy', ...statusGroup('$createdBy'), totalSubcategories: { $sum: 1 } } },
       { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
       { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
@@ -904,8 +917,16 @@ async function analyticsHandler(req, res) {
 
     // Subcategories by reviewer
     const subcategoriesByReviewerAgg = await TaskSubcategory.aggregate([
-      { $match: { reviewedBy: { $exists: true, $ne: null } } },
-      { $group: reviewerGroup('reviewedBy') },
+      { $match: { 
+        reviewedBy: { $exists: true, $ne: null },
+        categorySlug: { $exists: true, $ne: null, $ne: '' }
+      } },
+      { $group: {
+        _id: '$reviewedBy',
+        totalReviewed: { $sum: 1 },
+        totalApproved: { $sum: { $cond: [{ $in: ['$status', ['APPROVED', 'PUBLISHED']] }, 1, 0] } },
+        totalRejected: { $sum: { $cond: [{ $eq: ['$status', 'REJECTED'] }, 1, 0] } },
+      } },
       { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
       { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
       { $project: reviewerProject },
@@ -923,6 +944,7 @@ async function analyticsHandler(req, res) {
         { $project: { status: '$_id', count: 1, _id: 0 } },
       ]),
       TaskSubcategory.aggregate([
+        { $match: { categorySlug: { $exists: true, $ne: null, $ne: '' } } },
         { $group: { _id: '$status', count: { $sum: 1 } } },
         { $project: { status: '$_id', count: 1, _id: 0 } },
       ]),
@@ -945,9 +967,9 @@ async function analyticsHandler(req, res) {
       User.countDocuments({ role: 'writer' }),
       User.countDocuments({ role: 'reviewer' }),
       TaskCategory.countDocuments(),
-      TaskSubcategory.countDocuments(),
+      TaskSubcategory.countDocuments({ categorySlug: { $exists: true, $ne: null, $ne: '' } }),
       TaskCategory.countDocuments({ reviewedBy: { $exists: true, $ne: null } }),
-      TaskSubcategory.countDocuments({ reviewedBy: { $exists: true, $ne: null } }),
+      TaskSubcategory.countDocuments({ reviewedBy: { $exists: true, $ne: null }, categorySlug: { $exists: true, $ne: null, $ne: '' } }),
     ]);
 
     const mapWriter = (r, totalKey = 'totalArticles') => ({
