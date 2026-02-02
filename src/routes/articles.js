@@ -131,7 +131,7 @@ router.get('/my-articles', authenticate, async (req, res) => {
     // Optimize: Run count and query in parallel, use lean() for faster queries, select only needed fields
     const [articles, total] = await Promise.all([
       Article.find(filter)
-        .select('title description category subcategory status views createdAt reviewNotes author imageUrl')
+        .select('title description category subcategory subSubcategory status views createdAt reviewNotes author imageUrl')
         .populate('reviewedBy', 'name email')
         .populate('publishedBy', 'name email')
         .sort({ createdAt: -1 })
@@ -161,7 +161,7 @@ router.get('/my-articles', authenticate, async (req, res) => {
 // POST - Create a new article (Writer and Manager only)
 router.post('/', authenticate, allowRoles('writer', 'reviewer', 'content_access_manager'), async (req, res) => {
   try {
-    const { title, description, category, subcategory, content, author, imageUrl } = req.body;
+    const { title, description, category, subcategory, subSubcategory, content, author, imageUrl } = req.body;
 
     // Validation
     if (!title || !description || !category || !content) {
@@ -181,6 +181,7 @@ router.post('/', authenticate, allowRoles('writer', 'reviewer', 'content_access_
       description,
       category,
       subcategory: subcategory || '',
+      subSubcategory: subSubcategory || '',
       content,
       imageUrl,
       author: author || req.user.name || 'ExtraHand Team',
@@ -208,7 +209,7 @@ router.post('/', authenticate, allowRoles('writer', 'reviewer', 'content_access_
 router.put('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_access_manager'), async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, description, category, subcategory, content, author, imageUrl } = req.body;
+    const { title, description, category, subcategory, subSubcategory, content, author, imageUrl } = req.body;
 
     // Find article
     const article = await Article.findById(id);
@@ -236,6 +237,7 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_acces
         existingDraft.description = description || existingDraft.description;
         existingDraft.category = category || existingDraft.category;
         existingDraft.subcategory = subcategory !== undefined ? subcategory : existingDraft.subcategory;
+        existingDraft.subSubcategory = subSubcategory !== undefined ? subSubcategory : existingDraft.subSubcategory;
         existingDraft.content = content || existingDraft.content;
         existingDraft.imageUrl = imageUrl !== undefined ? imageUrl : existingDraft.imageUrl;
         existingDraft.author = author || existingDraft.author;
@@ -261,6 +263,7 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_acces
         description: description || article.description,
         category: category || article.category,
         subcategory: subcategory !== undefined ? subcategory : article.subcategory,
+        subSubcategory: subSubcategory !== undefined ? subSubcategory : article.subSubcategory,
         content: content || article.content,
         imageUrl: imageUrl !== undefined ? imageUrl : article.imageUrl,
         author: author || article.author,
@@ -286,6 +289,7 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_acces
     if (description) article.description = description;
     if (category) article.category = category;
     if (subcategory !== undefined) article.subcategory = subcategory;
+    if (subSubcategory !== undefined) article.subSubcategory = subSubcategory;
     if (content) article.content = content;
     if (imageUrl !== undefined) article.imageUrl = imageUrl;
     if (author) article.author = author;
