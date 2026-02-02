@@ -278,6 +278,7 @@ router.put(
         if (category) article.category = category;
         if (subcategory !== undefined) article.subcategory = subcategory;
         if (subSubcategory !== undefined) article.subSubcategory = subSubcategory;
+        existingDraft.subSubcategory = subSubcategory !== undefined ? subSubcategory : existingDraft.subSubcategory;
         if (content) article.content = content;
         if (imageUrl !== undefined) article.imageUrl = imageUrl;
         if (author) article.author = author;
