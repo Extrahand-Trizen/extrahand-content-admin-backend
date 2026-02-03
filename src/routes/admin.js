@@ -32,9 +32,13 @@ router.get('/articles/pending', authenticate, allowRoles('reviewer', 'writer', '
       // No filter by createdBy - they see all pending articles
     }
 
+    const articleListFields = 'title description category subcategory subSubcategory status isPublished author createdBy reviewedBy reviewedAt publishedBy createdAt updatedAt';
     const articles = await Article.find(filter)
+      .select(articleListFields)
       .populate('createdBy', 'name email role')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .limit(2000)
+      .lean();
 
     return res.status(200).json(articles);
   } catch (error) {
@@ -63,15 +67,17 @@ router.get('/articles/all', authenticate, allowRoles('reviewer', 'content_access
     const limitNum = parseInt(limit) || 50;
     const skip = (pageNum - 1) * limitNum;
 
+    const articleListFields = 'title description category subcategory subSubcategory status isPublished author createdBy reviewedBy reviewedAt publishedBy publishedAt createdAt updatedAt';
     const [articles, total] = await Promise.all([
       Article.find(filter)
+        .select(articleListFields)
         .populate('createdBy', 'name email role')
         .populate('reviewedBy', 'name email')
         .populate('publishedBy', 'name email')
         .sort({ createdAt: -1 })
         .limit(limitNum)
         .skip(skip)
-        .lean(), // Use lean() for better performance
+        .lean(),
       Article.countDocuments(filter)
     ]);
 
@@ -1037,11 +1043,13 @@ router.get('/analytics', authenticate, allowRoles('content_access_manager'), ana
 // GET - Get all pending categories
 router.get('/categories/pending', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
-    // Only show PENDING_APPROVAL categories for Reviewer review
-    // Drafts should not be visible until submitted
+    const categoryListFields = 'name slug status isPublished createdBy createdAt updatedAt';
     const categories = await TaskCategory.find({ status: 'PENDING_APPROVAL' })
+      .select(categoryListFields)
       .populate('createdBy', 'name email role')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .limit(2000)
+      .lean();
 
     return res.status(200).json(categories);
   } catch (error) {
@@ -1067,15 +1075,17 @@ router.get('/categories/all', authenticate, allowRoles('reviewer', 'content_acce
     const limitNum = parseInt(limit) || 50;
     const skip = (pageNum - 1) * limitNum;
 
+    const categoryListFields = 'name slug status isPublished createdBy reviewedBy publishedBy createdAt updatedAt';
     const [categories, total] = await Promise.all([
       TaskCategory.find(filter)
+        .select(categoryListFields)
         .populate('createdBy', 'name email role')
         .populate('reviewedBy', 'name email')
         .populate('publishedBy', 'name email')
         .sort({ createdAt: -1 })
         .limit(limitNum)
         .skip(skip)
-        .lean(), // Use lean() for better performance
+        .lean(),
       TaskCategory.countDocuments(filter)
     ]);
 
@@ -1258,10 +1268,13 @@ router.post('/categories/:id/unpublish', authenticate, allowRoles('reviewer', 'c
 // GET - Get all pending subcategories
 router.get('/subcategories/pending', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
+    const subcategoryListFields = 'name slug categorySlug status isPublished createdBy createdAt updatedAt';
     const subcategories = await TaskSubcategory.find({ status: 'PENDING_APPROVAL' })
+      .select(subcategoryListFields)
       .populate('createdBy', 'name email role')
-      .populate('categorySlug') // Optional: might fail if not reffed but usually just string
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .limit(2000)
+      .lean();
 
     return res.status(200).json(subcategories);
   } catch (error) {
@@ -1287,15 +1300,17 @@ router.get('/subcategories/all', authenticate, allowRoles('reviewer', 'content_a
     const limitNum = parseInt(limit) || 50;
     const skip = (pageNum - 1) * limitNum;
 
+    const subcategoryListFields = 'name slug categorySlug status isPublished createdBy reviewedBy publishedBy createdAt updatedAt';
     const [subcategories, total] = await Promise.all([
       TaskSubcategory.find(filter)
+        .select(subcategoryListFields)
         .populate('createdBy', 'name email role')
         .populate('reviewedBy', 'name email')
         .populate('publishedBy', 'name email')
         .sort({ createdAt: -1 })
         .limit(limitNum)
         .skip(skip)
-        .lean(), // Use lean() for better performance
+        .lean(),
       TaskSubcategory.countDocuments(filter)
     ]);
 
