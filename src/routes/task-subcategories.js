@@ -63,19 +63,28 @@ router.get("/", optionalAuth, async (req, res) => {
       filter = { isPublished: true };
     }
 
+    // Lean list: only fields needed for list view (avoids sending hero, staticTasks, earnings, etc.)
+    const listFields = "name slug categorySlug status isPublished createdBy createdAt updatedAt";
+
     if (categorySlug) {
       const subcategories = await TaskSubcategory.find({
         categorySlug,
         ...filter,
       })
+        .select(listFields)
         .populate("createdBy", "name email")
-        .sort({ createdAt: -1 });
+        .sort({ createdAt: -1 })
+        .limit(2000)
+        .lean();
       return res.status(200).json(subcategories);
     }
 
     const subcategories = await TaskSubcategory.find(filter)
+      .select(listFields)
       .populate("createdBy", "name email")
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .limit(2000)
+      .lean();
     return res.status(200).json(subcategories);
   } catch (error) {
     if (process.env.NODE_ENV === "development") {
@@ -88,26 +97,32 @@ router.get("/", optionalAuth, async (req, res) => {
 // GET - Fetch only subcategories created by the current user (writer only) - also exported for explicit registration in server
 async function mineHandler(req, res) {
   try {
+    const listFields = "name slug categorySlug status isPublished createdBy createdAt updatedAt";
+
     // Subcategories created by the current user
     const owned = await TaskSubcategory.find({ createdBy: req.user._id })
-      .populate('createdBy', 'name email')
-      .sort({ createdAt: -1 });
+      .select(listFields)
+      .populate("createdBy", "name email")
+      .sort({ createdAt: -1 })
+      .lean();
 
     // Backfill legacy subcategories that lack createdBy by using parent category ownership
-    const parentCategories = await TaskCategory.find({ createdBy: req.user._id }).select('slug');
-    const parentSlugs = parentCategories.map(cat => cat.slug);
+    const parentCategories = await TaskCategory.find({ createdBy: req.user._id }).select("slug").lean();
+    const parentSlugs = parentCategories.map((cat) => cat.slug);
 
     let inferred = [];
     if (parentSlugs.length > 0) {
       inferred = await TaskSubcategory.find({
         createdBy: { $in: [null, undefined] },
-        categorySlug: { $in: parentSlugs }
+        categorySlug: { $in: parentSlugs },
       })
-        .populate('createdBy', 'name email')
-        .sort({ createdAt: -1 });
+        .select(listFields)
+        .populate("createdBy", "name email")
+        .sort({ createdAt: -1 })
+        .lean();
 
       if (inferred.length > 0) {
-        const inferredIds = inferred.map(item => item._id);
+        const inferredIds = inferred.map((item) => item._id);
         await TaskSubcategory.updateMany(
           { _id: { $in: inferredIds }, createdBy: { $in: [null, undefined] } },
           { $set: { createdBy: req.user._id } }
@@ -117,7 +132,7 @@ async function mineHandler(req, res) {
 
     const combined = [...owned, ...inferred];
     const seen = new Set();
-    const unique = combined.filter(item => {
+    const unique = combined.filter((item) => {
       const id = item._id.toString();
       if (seen.has(id)) return false;
       seen.add(id);

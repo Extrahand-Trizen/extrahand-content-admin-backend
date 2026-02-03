@@ -77,9 +77,14 @@ router.get('/', optionalAuth, async (req, res) => {
     } else {
       filter = { isPublished: true };
     }
+    // Lean list: only fields needed for list view (avoids sending hero, staticTasks, earnings, etc.)
+    const listFields = 'name slug status isPublished createdBy createdAt updatedAt';
     const categories = await TaskCategory.find(filter)
+      .select(listFields)
       .populate('createdBy', 'name email')
-      .sort({ name: 1 });
+      .sort({ name: 1 })
+      .limit(2000)
+      .lean();
     return res.status(200).json(categories);
   } catch (error) {
     if (process.env.NODE_ENV === 'development') {
@@ -92,9 +97,12 @@ router.get('/', optionalAuth, async (req, res) => {
 // GET - Fetch only categories created by the current user (writer only) - also exported for explicit registration in server
 async function mineHandler(req, res) {
   try {
+    const listFields = 'name slug status isPublished createdBy createdAt updatedAt';
     const categories = await TaskCategory.find({ createdBy: req.user._id })
+      .select(listFields)
       .populate('createdBy', 'name email')
-      .sort({ name: 1 });
+      .sort({ name: 1 })
+      .lean();
     return res.status(200).json(categories);
   } catch (error) {
     if (process.env.NODE_ENV === 'development') {
