@@ -19,6 +19,11 @@ const SALT_ROUNDS = parseInt(process.env.BCRYPT_SALT_ROUNDS) || 12;
 // GET - Get all articles pending approval (Reviewer and Writer and content_access_manager)
 router.get('/articles/pending', authenticate, allowRoles('reviewer', 'writer', 'content_access_manager'), async (req, res) => {
   try {
+    const { page, limit } = req.query;
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 20));
+    const skip = (pageNum - 1) * limitNum;
+
     let filter = {};
 
     // Writers only see their own pending articles and drafts
@@ -26,21 +31,30 @@ router.get('/articles/pending', authenticate, allowRoles('reviewer', 'writer', '
       filter.createdBy = req.user._id;
       filter.status = { $in: ['DRAFT', 'PENDING_APPROVAL'] };
     } else if (req.user.role === 'reviewer' || req.user.role === 'content_access_manager') {
-      // Reviewers and content_access_managers see all articles pending approval from any writer
-      // This ensures they can review articles created by any writer
       filter.status = 'PENDING_APPROVAL';
-      // No filter by createdBy - they see all pending articles
     }
 
     const articleListFields = 'title description category subcategory subSubcategory status isPublished author createdBy reviewedBy reviewedAt publishedBy createdAt updatedAt';
-    const articles = await Article.find(filter)
-      .select(articleListFields)
-      .populate('createdBy', 'name email role')
-      .sort({ createdAt: -1 })
-      .limit(2000)
-      .lean();
+    const [articles, total] = await Promise.all([
+      Article.find(filter)
+        .select(articleListFields)
+        .populate('createdBy', 'name email role')
+        .sort({ createdAt: -1 })
+        .limit(limitNum)
+        .skip(skip)
+        .lean(),
+      Article.countDocuments(filter),
+    ]);
 
-    return res.status(200).json(articles);
+    return res.status(200).json({
+      data: articles,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        pages: Math.ceil(total / limitNum) || 1,
+      },
+    });
   } catch (error) {
     console.error('Error fetching pending articles:', error);
     return res.status(500).json({ error: 'Failed to fetch pending articles' });
@@ -1043,15 +1057,33 @@ router.get('/analytics', authenticate, allowRoles('content_access_manager'), ana
 // GET - Get all pending categories
 router.get('/categories/pending', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
-    const categoryListFields = 'name slug status isPublished createdBy createdAt updatedAt';
-    const categories = await TaskCategory.find({ status: 'PENDING_APPROVAL' })
-      .select(categoryListFields)
-      .populate('createdBy', 'name email role')
-      .sort({ createdAt: -1 })
-      .limit(2000)
-      .lean();
+    const { page, limit } = req.query;
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 20));
+    const skip = (pageNum - 1) * limitNum;
 
-    return res.status(200).json(categories);
+    const filter = { status: 'PENDING_APPROVAL' };
+    const categoryListFields = 'name slug status isPublished createdBy createdAt updatedAt submissionNotes originalCategoryId';
+    const [categories, total] = await Promise.all([
+      TaskCategory.find(filter)
+        .select(categoryListFields)
+        .populate('createdBy', 'name email role')
+        .sort({ createdAt: -1 })
+        .limit(limitNum)
+        .skip(skip)
+        .lean(),
+      TaskCategory.countDocuments(filter),
+    ]);
+
+    return res.status(200).json({
+      data: categories,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        pages: Math.ceil(total / limitNum) || 1,
+      },
+    });
   } catch (error) {
     console.error('Error fetching pending categories:', error);
     return res.status(500).json({ error: 'Failed to fetch pending categories' });
@@ -1268,15 +1300,33 @@ router.post('/categories/:id/unpublish', authenticate, allowRoles('reviewer', 'c
 // GET - Get all pending subcategories
 router.get('/subcategories/pending', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
-    const subcategoryListFields = 'name slug categorySlug status isPublished createdBy createdAt updatedAt';
-    const subcategories = await TaskSubcategory.find({ status: 'PENDING_APPROVAL' })
-      .select(subcategoryListFields)
-      .populate('createdBy', 'name email role')
-      .sort({ createdAt: -1 })
-      .limit(2000)
-      .lean();
+    const { page, limit } = req.query;
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 20));
+    const skip = (pageNum - 1) * limitNum;
 
-    return res.status(200).json(subcategories);
+    const filter = { status: 'PENDING_APPROVAL' };
+    const subcategoryListFields = 'name slug categorySlug status isPublished createdBy createdAt updatedAt submissionNotes originalSubcategoryId';
+    const [subcategories, total] = await Promise.all([
+      TaskSubcategory.find(filter)
+        .select(subcategoryListFields)
+        .populate('createdBy', 'name email role')
+        .sort({ createdAt: -1 })
+        .limit(limitNum)
+        .skip(skip)
+        .lean(),
+      TaskSubcategory.countDocuments(filter),
+    ]);
+
+    return res.status(200).json({
+      data: subcategories,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        pages: Math.ceil(total / limitNum) || 1,
+      },
+    });
   } catch (error) {
     console.error('Error fetching pending subcategories:', error);
     return res.status(500).json({ error: 'Failed to fetch pending subcategories' });
