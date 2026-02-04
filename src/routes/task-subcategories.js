@@ -35,11 +35,24 @@ router.get("/", optionalAuth, async (req, res) => {
     const { slug, categorySlug } = req.query;
 
     if (slug) {
+<<<<<<< HEAD:src/routes/task-subcategories.js
       // Only return published subcategory (unpublished must not be visible on main website)
+<<<<<<< Updated upstream
       const subcategory = await TaskSubcategory.findOne({
         slug,
         isPublished: true,
       }).populate("createdBy", "name email");
+=======
+      const subcategory = await TaskSubcategory.findOne({ slug, isPublished: true })
+        .populate('createdBy', 'name email');
+=======
+      let subcategory = await TaskSubcategory.findOne({ slug, isPublished: true });
+
+      if (!subcategory) {
+        subcategory = await TaskSubcategory.findOne({ slug });
+      }
+>>>>>>> d0e1910d043e8417182d99ee5f84968648b89f45:routes/task-subcategories.js
+>>>>>>> Stashed changes
 
       if (!subcategory) {
         return res.status(404).json({ error: "Subcategory not found" });
@@ -712,8 +725,102 @@ router.delete(
         details: error.message,
       });
     }
+<<<<<<< Updated upstream
   },
 );
+=======
+
+    if (updateData.topTaskers && Array.isArray(updateData.topTaskers)) {
+      updateData.topTaskers = updateData.topTaskers.map(tasker => {
+        const { profileImageFile, ...rest } = tasker;
+        return { ...rest, profileImage: rest.profileImage !== undefined ? rest.profileImage : '' };
+      });
+    }
+
+    // If subcategory was rejected, move back to draft on edit
+    const docToUpdate = await TaskSubcategory.findById(id);
+    if (!docToUpdate) {
+      return res.status(404).json({ error: 'Subcategory not found' });
+    }
+    if (docToUpdate.status === 'REJECTED' && req.user.role === 'writer') {
+      updateData.status = 'DRAFT';
+      updateData.reviewNotes = '';
+    }
+
+    // Assign and save so nested arrays (topTaskers/staticTasks with profileImage) persist correctly
+    Object.keys(updateData).forEach((key) => {
+      if (key !== '_id' && key !== 'createdBy') {
+        docToUpdate[key] = updateData[key];
+      }
+    });
+    await docToUpdate.save();
+    const subcategory = await TaskSubcategory.findById(id).lean();
+
+<<<<<<< HEAD:src/routes/task-subcategories.js
+=======
+    if (!subcategory) {
+      return res.status(404).json({ error: 'Subcategory not found' });
+    }
+
+>>>>>>> d0e1910d043e8417182d99ee5f84968648b89f45:routes/task-subcategories.js
+    return res.status(200).json({
+      message: 'Subcategory updated successfully',
+      subcategory,
+    });
+  } catch (error) {
+    console.error('Error updating subcategory:', error);
+    return res.status(500).json({
+      error: 'Failed to update subcategory',
+      details: error.message,
+    });
+  }
+});
+
+// DELETE - Delete a subcategory 
+router.delete('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_access_manager'), async (req, res) => {
+  try {
+    const { id } = req.params; // Get ID from URL params instead of query
+
+    if (!id) {
+      return res.status(400).json({ error: 'Subcategory ID is required' });
+    }
+
+    const subcategory = await TaskSubcategory.findById(id);
+
+    if (!subcategory) {
+      return res.status(404).json({ error: 'Subcategory not found' });
+    }
+
+    // Check permissions: only creator or manager can delete
+<<<<<<< HEAD:src/routes/task-subcategories.js
+    if (subcategory.createdBy && subcategory.createdBy.toString() !== req.user._id.toString() && !['reviewer', 'content_access_manager'].includes(req.user.role)) {
+=======
+    if (subcategory.createdBy && subcategory.createdBy.toString() !== req.user._id.toString() && !['reviewer', 'manager'].includes(req.user.role)) {
+>>>>>>> d0e1910d043e8417182d99ee5f84968648b89f45:routes/task-subcategories.js
+      return res.status(403).json({ error: 'Not authorized to delete this subcategory' });
+    }
+
+    // Prevent deletion of published subcategories by non-managers
+<<<<<<< HEAD:src/routes/task-subcategories.js
+    if (subcategory.status === 'PUBLISHED' && !['reviewer', 'content_access_manager'].includes(req.user.role)) {
+=======
+    if (subcategory.status === 'PUBLISHED' && !['reviewer', 'manager'].includes(req.user.role)) {
+>>>>>>> d0e1910d043e8417182d99ee5f84968648b89f45:routes/task-subcategories.js
+      return res.status(403).json({ error: 'Cannot delete published subcategories. Contact manager.' });
+    }
+
+    await TaskSubcategory.findByIdAndDelete(id);
+
+    return res.status(200).json({ message: 'Subcategory deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting subcategory:', error);
+    return res.status(500).json({
+      error: 'Failed to delete subcategory',
+      details: error.message,
+    });
+  }
+});
+>>>>>>> Stashed changes
 
 // POST - Submit subcategory for approval (Writer and Manager)
 router.post(
@@ -758,8 +865,39 @@ router.post(
       console.error("Error submitting subcategory:", error);
       return res.status(500).json({ error: "Failed to submit subcategory" });
     }
+<<<<<<< Updated upstream
   },
 );
+=======
+
+    // Check ownership - managers can submit any, writers only their own
+<<<<<<< HEAD:src/routes/task-subcategories.js
+    if (!['reviewer', 'content_access_manager'].includes(req.user.role) && subcategory.createdBy && subcategory.createdBy.toString() !== req.user._id.toString()) {
+=======
+    if (!['reviewer', 'manager'].includes(req.user.role) && subcategory.createdBy && subcategory.createdBy.toString() !== req.user._id.toString()) {
+>>>>>>> d0e1910d043e8417182d99ee5f84968648b89f45:routes/task-subcategories.js
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+
+    // Only draft or rejected subcategories can be submitted
+    if (!['DRAFT', 'REJECTED'].includes(subcategory.status)) {
+      return res.status(400).json({ error: 'Subcategory cannot be submitted for approval' });
+    }
+
+    subcategory.status = 'PENDING_APPROVAL';
+    subcategory.reviewNotes = '';
+    await subcategory.save();
+
+    return res.status(200).json({
+      message: 'Subcategory submitted for approval',
+      subcategory,
+    });
+  } catch (error) {
+    console.error('Error submitting subcategory:', error);
+    return res.status(500).json({ error: 'Failed to submit subcategory' });
+  }
+});
+>>>>>>> Stashed changes
 
 module.exports = router;
 module.exports.mineHandler = mineHandler;
