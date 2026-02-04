@@ -12,9 +12,17 @@ router.get('/', optionalAuth, async (req, res) => {
     const { slug, categorySlug } = req.query;
 
     if (slug) {
+<<<<<<< HEAD:src/routes/task-subcategories.js
       // Only return published subcategory (unpublished must not be visible on main website)
       const subcategory = await TaskSubcategory.findOne({ slug, isPublished: true })
         .populate('createdBy', 'name email');
+=======
+      let subcategory = await TaskSubcategory.findOne({ slug, isPublished: true });
+
+      if (!subcategory) {
+        subcategory = await TaskSubcategory.findOne({ slug });
+      }
+>>>>>>> d0e1910d043e8417182d99ee5f84968648b89f45:routes/task-subcategories.js
 
       if (!subcategory) {
         return res.status(404).json({ error: 'Subcategory not found' });
@@ -484,6 +492,13 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_acces
     await docToUpdate.save();
     const subcategory = await TaskSubcategory.findById(id).lean();
 
+<<<<<<< HEAD:src/routes/task-subcategories.js
+=======
+    if (!subcategory) {
+      return res.status(404).json({ error: 'Subcategory not found' });
+    }
+
+>>>>>>> d0e1910d043e8417182d99ee5f84968648b89f45:routes/task-subcategories.js
     return res.status(200).json({
       message: 'Subcategory updated successfully',
       subcategory,
@@ -513,12 +528,20 @@ router.delete('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_ac
     }
 
     // Check permissions: only creator or manager can delete
+<<<<<<< HEAD:src/routes/task-subcategories.js
     if (subcategory.createdBy && subcategory.createdBy.toString() !== req.user._id.toString() && !['reviewer', 'content_access_manager'].includes(req.user.role)) {
+=======
+    if (subcategory.createdBy && subcategory.createdBy.toString() !== req.user._id.toString() && !['reviewer', 'manager'].includes(req.user.role)) {
+>>>>>>> d0e1910d043e8417182d99ee5f84968648b89f45:routes/task-subcategories.js
       return res.status(403).json({ error: 'Not authorized to delete this subcategory' });
     }
 
     // Prevent deletion of published subcategories by non-managers
+<<<<<<< HEAD:src/routes/task-subcategories.js
     if (subcategory.status === 'PUBLISHED' && !['reviewer', 'content_access_manager'].includes(req.user.role)) {
+=======
+    if (subcategory.status === 'PUBLISHED' && !['reviewer', 'manager'].includes(req.user.role)) {
+>>>>>>> d0e1910d043e8417182d99ee5f84968648b89f45:routes/task-subcategories.js
       return res.status(403).json({ error: 'Cannot delete published subcategories. Contact manager.' });
     }
 
@@ -546,7 +569,11 @@ router.post('/submit/:id', authenticate, allowRoles('writer', 'reviewer', 'conte
     }
 
     // Check ownership - managers can submit any, writers only their own
+<<<<<<< HEAD:src/routes/task-subcategories.js
     if (!['reviewer', 'content_access_manager'].includes(req.user.role) && subcategory.createdBy && subcategory.createdBy.toString() !== req.user._id.toString()) {
+=======
+    if (!['reviewer', 'manager'].includes(req.user.role) && subcategory.createdBy && subcategory.createdBy.toString() !== req.user._id.toString()) {
+>>>>>>> d0e1910d043e8417182d99ee5f84968648b89f45:routes/task-subcategories.js
       return res.status(403).json({ error: 'Not authorized' });
     }
 

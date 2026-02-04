@@ -1,0 +1,6 @@
+Connecting to MongoDB...
+Connected to MongoDB successfully!
+
+Found 16 total subcategories in database
+
+✓ No city-based subcategories found.

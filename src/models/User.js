@@ -2,7 +2,11 @@ const mongoose = require('mongoose');
 const crypto = require('crypto');
 
 const USER_STATUSES = ['PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED'];
+<<<<<<< HEAD:src/models/User.js
 const USER_ROLES = ['content_access_manager', 'writer', 'reviewer'];
+=======
+const USER_ROLES = ['writer', 'reviewer', 'manager'];
+>>>>>>> d0e1910d043e8417182d99ee5f84968648b89f45:models/User.js
 
 const UserSchema = new mongoose.Schema(
   {
