@@ -32,16 +32,33 @@ const setNestedProperty = (obj, path, value) => {
 // GET - Fetch all subcategories or a single subcategory by slug
 router.get("/", optionalAuth, async (req, res) => {
   try {
-    const { slug, categorySlug } = req.query;
+    const { slug, categorySlug, preview } = req.query;
 
     if (slug) {
+      const isPreview = preview === "1" || preview === "true";
+      const canPreview =
+        isPreview &&
+        req.user &&
+        ["writer", "reviewer", "content_access_manager"].includes(req.user.role);
 
-      // Only return published subcategory (unpublished must not be visible on main website)
-      const subcategory = await TaskSubcategory.findOne({
-        slug,
-        isPublished: true,
-      }).populate("createdBy", "name email");
+      const slugCandidates = [slug];
+      if (categorySlug && !slug.includes("/")) {
+        slugCandidates.push(`${categorySlug}/${slug}`);
+      }
 
+      const filter = { slug: { $in: slugCandidates } };
+      if (categorySlug) {
+        filter.categorySlug = categorySlug;
+      }
+      if (!canPreview) {
+        // Only return published subcategory (unpublished must not be visible on main website)
+        filter.isPublished = true;
+      }
+
+      const subcategory = await TaskSubcategory.findOne(filter).populate(
+        "createdBy",
+        "name email",
+      );
 
       if (!subcategory) {
         return res.status(404).json({ error: "Subcategory not found" });
