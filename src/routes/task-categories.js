@@ -12,7 +12,6 @@ router.get('/', optionalAuth, async (req, res) => {
     const { slug } = req.query;
 
     if (slug) {
-<<<<<<< HEAD:src/routes/task-categories.js
       // If authenticated writer/reviewer/manager, allow viewing own or any draft by slug
       if (req.user) {
         const allowedRoles = ['writer', 'reviewer', 'content_access_manager'];
@@ -42,55 +41,25 @@ router.get('/', optionalAuth, async (req, res) => {
       const item = await TaskCategory.findOne({ slug, isPublished: true })
         .populate('createdBy', 'name email');
 
-=======
-      // 1. Try to find in TaskCategory first
-      let item = await TaskCategory.findOne({ slug, isPublished: true });
-      if (!item) {
-        item = await TaskCategory.findOne({ slug });
-      }
-
->>>>>>> d0e1910d043e8417182d99ee5f84968648b89f45:routes/task-categories.js
       if (item) {
         return res.status(200).json(item);
       }
 
-<<<<<<< HEAD:src/routes/task-categories.js
       // Public: published subcategory only
       const subcategory = await TaskSubcategory.findOne({ slug, isPublished: true })
         .populate('createdBy', 'name email');
 
       if (subcategory) {
-=======
-      // 2. Try to find in TaskSubcategory if not found in TaskCategory
-      let subcategory = await TaskSubcategory.findOne({ slug, isPublished: true });
-      if (!subcategory) {
-        subcategory = await TaskSubcategory.findOne({ slug });
-      }
-
-      if (subcategory) {
-        // Fetch parent category to get its name
->>>>>>> d0e1910d043e8417182d99ee5f84968648b89f45:routes/task-categories.js
         let parentCategory = null;
         if (subcategory.categorySlug) {
           parentCategory = await TaskCategory.findOne({ slug: subcategory.categorySlug });
         }
-<<<<<<< HEAD:src/routes/task-categories.js
-=======
-
->>>>>>> d0e1910d043e8417182d99ee5f84968648b89f45:routes/task-categories.js
         const subcategoryObj = subcategory.toObject();
         if (parentCategory) {
           subcategoryObj.categoryName = parentCategory.name;
         } else {
           subcategoryObj.categoryName = subcategory.name;
         }
-<<<<<<< HEAD:src/routes/task-categories.js
-=======
-
-        // Add type for frontend if needed, but the user wants "no differentiation"
-        // subcategoryObj.type = 'Subcategory'; 
-
->>>>>>> d0e1910d043e8417182d99ee5f84968648b89f45:routes/task-categories.js
         return res.status(200).json(subcategoryObj);
       }
 
@@ -658,11 +627,7 @@ router.delete('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_ac
     // 1. User is a manager (reviewer role), OR
     // 2. User is the creator of the category, OR
     // 3. Category has no creator (legacy data)
-<<<<<<< HEAD:src/routes/task-categories.js
     if (!['reviewer', 'content_access_manager'].includes(req.user.role) && category.createdBy && category.createdBy.toString() !== req.user._id.toString()) {
-=======
-    if (!['reviewer', 'manager'].includes(req.user.role) && category.createdBy && category.createdBy.toString() !== req.user._id.toString()) {
->>>>>>> d0e1910d043e8417182d99ee5f84968648b89f45:routes/task-categories.js
       return res.status(403).json({ error: 'Not authorized to delete this category' });
     }
 
