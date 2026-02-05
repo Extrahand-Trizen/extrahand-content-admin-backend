@@ -1,6 +1,9 @@
 {
   "compilerOptions": {
     "module": "CommonJS",
+    "target": "ES2019",
+    "rootDir": "src",
+    "outDir": "dist",
 
     "allowJs": true,
     "checkJs": false,
@@ -9,7 +12,8 @@
     "allowSyntheticDefaultImports": true,
 
     "strict": true,
-    "moduleResolution": "Bundler",
+    "moduleResolution": "Node",
     "jsx": "preserve"
-  }
+  },
+  "include": ["src/**/*"]
 }

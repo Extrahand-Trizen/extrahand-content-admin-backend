@@ -4,6 +4,7 @@
   "description": "Backend server for Extrahand Content Admin",
   "main": "server.ts",
   "scripts": {
+    "build": "tsc",
     "start": "ts-node src/server.ts",
     "dev": "nodemon --watch src --ext ts --exec ts-node src/server.ts",
     "seed": "ts-node src/seed.ts",
