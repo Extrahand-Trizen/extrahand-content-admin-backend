@@ -95,7 +95,35 @@ router.get("/", optionalAuth, async (req, res) => {
         .sort({ createdAt: -1 })
         .limit(2000)
         .lean();
-      return res.status(200).json(subcategories);
+
+      if (subcategories.length > 0) {
+        return res.status(200).json(subcategories);
+      }
+
+      // Backward-compatible fallback: derive a single subcategory from legacy fields on TaskCategory
+      const parentCategory = await TaskCategory.findOne({ slug: categorySlug })
+        .select("subcategory subcategorySlug isPublished")
+        .lean();
+
+      const shouldExposeLegacy =
+        parentCategory &&
+        parentCategory.subcategory &&
+        parentCategory.subcategorySlug &&
+        (filter.isPublished ? parentCategory.isPublished === true : true);
+
+      if (shouldExposeLegacy) {
+        return res.status(200).json([
+          {
+            name: parentCategory.subcategory,
+            slug: parentCategory.subcategorySlug,
+            categorySlug,
+            status: "PUBLISHED",
+            isPublished: true,
+          },
+        ]);
+      }
+
+      return res.status(200).json([]);
     }
 
     const subcategories = await TaskSubcategory.find(filter)

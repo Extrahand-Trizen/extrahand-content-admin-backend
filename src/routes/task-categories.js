@@ -78,14 +78,31 @@ router.get('/', optionalAuth, async (req, res) => {
       filter = { isPublished: true };
     }
     // Lean list: only fields needed for list view (avoids sending hero, staticTasks, earnings, etc.)
-    const listFields = 'name slug status isPublished createdBy createdAt updatedAt';
+    const listFields = 'name slug status isPublished subcategory subcategorySlug createdBy createdAt updatedAt';
     const categories = await TaskCategory.find(filter)
       .select(listFields)
       .populate('createdBy', 'name email')
       .sort({ name: 1 })
       .limit(2000)
       .lean();
-    return res.status(200).json(categories);
+
+    const categoriesWithSubcategories = categories.map((category) => {
+      if (category.subcategory && category.subcategorySlug) {
+        return {
+          ...category,
+          subcategories: [
+            {
+              name: category.subcategory,
+              slug: category.subcategorySlug,
+              categorySlug: category.slug,
+            },
+          ],
+        };
+      }
+      return category;
+    });
+
+    return res.status(200).json(categoriesWithSubcategories);
   } catch (error) {
     if (process.env.NODE_ENV === 'development') {
       console.error('Error fetching categories:', error);
