@@ -75,6 +75,12 @@ const TaskCategorySchema = new mongoose.Schema(
       trim: true,
       lowercase: true,
     },
+    // Category type: tasker-facing, poster-facing, or both
+    categoryType: {
+      type: String,
+      trim: true, // e.g. "As A Tasker" or "As A Poster"
+      default: "",
+    },
     // Hero Section
     heroTitle: {
       type: String,
@@ -89,6 +95,100 @@ const TaskCategorySchema = new mongoose.Schema(
     heroImage: {
       type: String,
       trim: true,
+    },
+    // Poster rating summary (for hero / social proof)
+    ratingValue: {
+      type: String,
+      trim: true, // e.g. "4.2"
+    },
+    ratingText: {
+      type: String,
+      trim: true, // e.g. "Great rating - 4.2/5 (11114+ reviews)"
+    },
+    reviewsCount: {
+      type: String,
+      trim: true,
+    },
+    // Poster: recent reviews for this category (used on poster-facing category pages)
+    reviews: [
+      {
+        reviewerName: {
+          type: String,
+          trim: true,
+        },
+        reviewerLocation: {
+          type: String,
+          trim: true,
+        },
+        rating: {
+          type: String,
+          trim: true,
+        },
+        text: {
+          type: String,
+          trim: true,
+        },
+        jobType: {
+          type: String,
+          trim: true,
+        },
+        price: {
+          type: String,
+          trim: true,
+        },
+      },
+    ],
+    // Poster: cost & rating summary shown in Airtasker-style poster layout
+    posterCostTitle: {
+      type: String,
+      trim: true,
+    },
+    posterCostLow: {
+      type: String,
+      trim: true,
+    },
+    posterCostHigh: {
+      type: String,
+      trim: true,
+    },
+    posterCostMedian: {
+      type: String,
+      trim: true,
+    },
+    posterCostTasksCount: {
+      type: String,
+      trim: true,
+    },
+    posterAvgRating: {
+      type: String,
+      trim: true,
+    },
+    posterAvgReviewsCount: {
+      type: String,
+      trim: true,
+    },
+    // Poster: detailed star rating breakdown for the average reviews card
+    posterRatingBreakdown: {
+      fiveStar: {
+        type: String,
+        trim: true,
+      },
+      fourStar: {
+        type: String,
+        trim: true,
+      },
+      threeStar: {
+        type: String,
+        trim: true,
+      },
+      twoStar: {
+        type: String,
+        trim: true,
+      },
+      oneStar: {
+        type: String,
+        trim: true,
+      },
     },
     // Earnings Card
     earningsCard: {
@@ -174,6 +274,28 @@ const TaskCategorySchema = new mongoose.Schema(
       default: 'Join Extrahand',
       trim: true,
     },
+    // Poster: Why book this category through Extrahand
+    whyBookTitle: {
+      type: String,
+      trim: true,
+      default: 'Why book through Extrahand?',
+    },
+    whyBookDescription: {
+      type: String,
+      trim: true,
+    },
+    whyBookFeatures: [
+      {
+        title: {
+          type: String,
+          trim: true,
+        },
+        description: {
+          type: String,
+          trim: true,
+        },
+      },
+    ],
     // Static Tasks Section
     staticTasksSectionTitle: {
       type: String,
@@ -204,6 +326,10 @@ const TaskCategorySchema = new mongoose.Schema(
           type: String,
           trim: true,
         },
+        location: {
+          type: String,
+          trim: true,
+        },
         description: {
           type: String,
           trim: true,
@@ -225,8 +351,68 @@ const TaskCategorySchema = new mongoose.Schema(
           type: String,
           trim: true,
         },
+        // Review fields (for tasks with reviews)
+        hasReview: {
+          type: Boolean,
+          default: false,
+        },
+        reviewRating: {
+          type: String,
+          trim: true,
+        },
+        reviewText: {
+          type: String,
+          trim: true,
+        },
+        reviewerImages: [
+          {
+            type: String,
+            trim: true,
+          },
+        ],
       },
     ],
+    // Poster: cost & rating summary for the "Best rated experts" block
+    posterCostTitle: {
+      type: String,
+      trim: true,
+    },
+    posterCostLow: {
+      type: String,
+      trim: true,
+    },
+    posterCostHigh: {
+      type: String,
+      trim: true,
+    },
+    posterCostMedian: {
+      type: String,
+      trim: true,
+    },
+    posterCostTasksCount: {
+      type: Number,
+      default: 0,
+    },
+    posterCostDistribution: [
+      {
+        label: {
+          type: String,
+          trim: true,
+        },
+        percentage: {
+          type: Number,
+          default: 0,
+        },
+      },
+    ],
+    posterAvgRating: {
+      type: String,
+      trim: true,
+    },
+    posterAvgReviewsCount: {
+      type: String,
+      trim: true,
+    },
     // Earning Potential Section
     earningPotentialTitle: {
       type: String,
@@ -359,7 +545,7 @@ const TaskCategorySchema = new mongoose.Schema(
         },
       },
     ],
-    // Get Inspired: Top Taskers Section
+    // Get Inspired: Top Taskers Section (also reused for poster "Best rated experts" cards)
     getInspiredTitle: {
       type: String,
       trim: true,
@@ -417,6 +603,23 @@ const TaskCategorySchema = new mongoose.Schema(
           type: String,
           trim: true,
         },
+        // Poster-specific additions
+        latestReviewText: {
+          type: String,
+          trim: true,
+        },
+        isVerified: {
+          type: Boolean,
+          default: false,
+        },
+        isTopRated: {
+          type: Boolean,
+          default: false,
+        },
+        priceLabel: {
+          type: String,
+          trim: true,
+        },
       },
     ],
     // We've Got You Covered Section
@@ -469,6 +672,48 @@ const TaskCategorySchema = new mongoose.Schema(
           type: String,
           trim: true,
         },
+      },
+    ],
+    // Poster: What do these services include? (long-form explainer)
+    whatTheyDoTitle: {
+      type: String,
+      trim: true,
+    },
+    whatTheyDoSections: [
+      {
+        heading: {
+          type: String,
+          trim: true,
+        },
+        body: {
+          type: String,
+          trim: true,
+        },
+      },
+    ],
+    // Poster: Services, Related Services, and Locations Section (3 columns)
+    categoryServicesList: [
+      {
+        type: String,
+        trim: true,
+      },
+    ],
+    relatedServicesNearMe: [
+      {
+        type: String,
+        trim: true,
+      },
+    ],
+    relatedLocations: [
+      {
+        type: String,
+        trim: true,
+      },
+    ],
+    topLocationsList: [
+      {
+        type: String,
+        trim: true,
       },
     ],
     // Ways to earn money with accounting tasks section

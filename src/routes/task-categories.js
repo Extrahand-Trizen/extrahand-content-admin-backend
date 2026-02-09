@@ -77,6 +77,14 @@ router.get('/', optionalAuth, async (req, res) => {
     } else {
       filter = { isPublished: true };
     }
+    
+    // Optional author filter for content_access_manager
+    const { author } = req.query;
+    if (author && isContentAccessManager) {
+      filter.createdBy = author;
+    }
+    
+    
     // Lean list: only fields needed for list view (avoids sending hero, staticTasks, earnings, etc.)
     const listFields = 'name slug status isPublished createdBy createdAt updatedAt';
     const categories = await TaskCategory.find(filter)
