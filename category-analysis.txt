@@ -1,0 +1,21 @@
+Connecting to MongoDB...
+Connected to MongoDB successfully!
+
+Found 11 total categories:
+
+  - Name: "Carpenter Tasks", Slug: "carpenter"
+  - Name: "Car Wash Tasks", Slug: "car-wash"
+  - Name: "Cleaner Tasks", Slug: "cleaner"
+  - Name: "Chef Tasks", Slug: "chef"
+  - Name: "Accountant Tasks", Slug: "accountant"
+  - Name: "Waterproofing Tasks", Slug: "waterproofing"
+  - Name: "Barista Tasks", Slug: "barista"
+  - Name: "Appliance Repair Tasks", Slug: "appliance-repair"
+  - Name: "Architect Tasks", Slug: "architect"
+  - Name: "Admin Assistant Tasks", Slug: "admin-assistant"
+  - Name: "Bartender Tasks", Slug: "bartender"
+
+
+Removalist-related categories:
+
+⚠️  No removalist category found!
