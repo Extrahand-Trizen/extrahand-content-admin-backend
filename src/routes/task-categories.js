@@ -31,6 +31,7 @@ router.get('/', optionalAuth, async (req, res) => {
               if (subcategory.categorySlug) parentCategory = await TaskCategory.findOne({ slug: subcategory.categorySlug });
               const subcategoryObj = subcategory.toObject();
               subcategoryObj.categoryName = parentCategory ? parentCategory.name : subcategory.name;
+              subcategoryObj.categoryType = parentCategory ? parentCategory.categoryType : (subcategoryObj.categoryType || "");
               return res.status(200).json(subcategoryObj);
             }
           }
@@ -57,8 +58,10 @@ router.get('/', optionalAuth, async (req, res) => {
         const subcategoryObj = subcategory.toObject();
         if (parentCategory) {
           subcategoryObj.categoryName = parentCategory.name;
+          subcategoryObj.categoryType = parentCategory.categoryType || "";
         } else {
           subcategoryObj.categoryName = subcategory.name;
+          subcategoryObj.categoryType = subcategoryObj.categoryType || "";
         }
         return res.status(200).json(subcategoryObj);
       }
