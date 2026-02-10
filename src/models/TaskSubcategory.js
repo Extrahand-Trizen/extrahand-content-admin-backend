@@ -82,6 +82,111 @@ const TaskSubcategorySchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    // Poster rating summary (for hero / social proof)
+    ratingValue: {
+      type: String,
+      trim: true,
+    },
+    ratingText: {
+      type: String,
+      trim: true,
+    },
+    reviewsCount: {
+      type: String,
+      trim: true,
+    },
+    // Poster: recent reviews for this subcategory
+    reviews: [
+      {
+        reviewerName: {
+          type: String,
+          trim: true,
+        },
+        reviewerLocation: {
+          type: String,
+          trim: true,
+        },
+        rating: {
+          type: String,
+          trim: true,
+        },
+        text: {
+          type: String,
+          trim: true,
+        },
+        jobType: {
+          type: String,
+          trim: true,
+        },
+        price: {
+          type: String,
+          trim: true,
+        },
+      },
+    ],
+    // Poster: cost & rating summary shown in poster layout
+    posterCostTitle: {
+      type: String,
+      trim: true,
+    },
+    posterCostLow: {
+      type: String,
+      trim: true,
+    },
+    posterCostHigh: {
+      type: String,
+      trim: true,
+    },
+    posterCostMedian: {
+      type: String,
+      trim: true,
+    },
+    posterCostTasksCount: {
+      type: Number,
+      default: 0,
+    },
+    posterCostDistribution: [
+      {
+        label: {
+          type: String,
+          trim: true,
+        },
+        percentage: {
+          type: Number,
+          default: 0,
+        },
+      },
+    ],
+    posterAvgRating: {
+      type: String,
+      trim: true,
+    },
+    posterAvgReviewsCount: {
+      type: String,
+      trim: true,
+    },
+    posterRatingBreakdown: {
+      fiveStar: {
+        type: String,
+        trim: true,
+      },
+      fourStar: {
+        type: String,
+        trim: true,
+      },
+      threeStar: {
+        type: String,
+        trim: true,
+      },
+      twoStar: {
+        type: String,
+        trim: true,
+      },
+      oneStar: {
+        type: String,
+        trim: true,
+      },
+    },
     // Earnings Card
     earningsCard: {
       weekly: {
@@ -166,6 +271,27 @@ const TaskSubcategorySchema = new mongoose.Schema(
       default: 'Join Extrahand',
       trim: true,
     },
+    // Poster: Why book through Extrahand
+    whyBookTitle: {
+      type: String,
+      trim: true,
+    },
+    whyBookDescription: {
+      type: String,
+      trim: true,
+    },
+    whyBookFeatures: [
+      {
+        title: {
+          type: String,
+          trim: true,
+        },
+        description: {
+          type: String,
+          trim: true,
+        },
+      },
+    ],
     // Static Tasks Section
     staticTasksSectionTitle: {
       type: String,
@@ -219,6 +345,40 @@ const TaskSubcategorySchema = new mongoose.Schema(
         },
       },
     ],
+    // Poster: What do these services include?
+    whatTheyDoTitle: {
+      type: String,
+      trim: true,
+    },
+    whatTheyDoSections: [
+      {
+        heading: {
+          type: String,
+          trim: true,
+        },
+        body: {
+          type: String,
+          trim: true,
+        },
+      },
+    ],
+    // Poster: Three Column Section
+    categoryServicesList: {
+      type: [String],
+      default: [],
+    },
+    relatedServicesNearMe: {
+      type: [String],
+      default: [],
+    },
+    topLocationsList: {
+      type: [String],
+      default: [],
+    },
+    relatedLocations: {
+      type: [String],
+      default: [],
+    },
     // Earning Potential Section
     earningPotentialTitle: {
       type: String,
@@ -406,6 +566,22 @@ const TaskSubcategorySchema = new mongoose.Schema(
           trim: true,
         },
         tasksCount: {
+          type: String,
+          trim: true,
+        },
+        isVerified: {
+          type: Boolean,
+          default: false,
+        },
+        isTopRated: {
+          type: Boolean,
+          default: false,
+        },
+        priceLabel: {
+          type: String,
+          trim: true,
+        },
+        latestReviewText: {
           type: String,
           trim: true,
         },
