@@ -25,9 +25,6 @@ import invitationRouter from './routes/invitations';
 const app = express();
 const PORT = 5001;
 
-// Connect to MongoDB
-connectDB();
-
 // CORS Configuration
 const allowedOrigins = process.env.ALLOWED_ORIGINS 
   ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
@@ -121,9 +118,13 @@ app.use((err : any, req : Request, res : Response, next : NextFunction) => {
   });
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/health`);
-});
+// Connect to MongoDB, then start server (so auth/routes don't run before DB is ready)
+const startServer = async () => {
+  await connectDB();
+  app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+    console.log(`Health check: http://localhost:${PORT}/health`);
+  });
+};
+startServer();
 
