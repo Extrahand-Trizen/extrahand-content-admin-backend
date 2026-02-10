@@ -13,6 +13,14 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
 });
 
+const normalizeNumber = (value, fallback = 0) => {
+  if (value === null || value === undefined || value === "") {
+    return fallback;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
 // Helper to set nested properties from form-data field names
 // e.g. "topTaskers[0][profileImage]" -> body.topTaskers[0].profileImage
 const setNestedProperty = (obj, path, value) => {
@@ -337,7 +345,7 @@ router.post(
         posterCostLow: cleanBody.posterCostLow || '',
         posterCostHigh: cleanBody.posterCostHigh || '',
         posterCostMedian: cleanBody.posterCostMedian || '',
-        posterCostTasksCount: cleanBody.posterCostTasksCount != null ? Number(cleanBody.posterCostTasksCount) : 0,
+        posterCostTasksCount: normalizeNumber(cleanBody.posterCostTasksCount, 0),
         posterCostDistribution: Array.isArray(cleanBody.posterCostDistribution) ? cleanBody.posterCostDistribution : [],
         posterAvgRating: cleanBody.posterAvgRating || '',
         posterAvgReviewsCount: cleanBody.posterAvgReviewsCount || '',
@@ -699,6 +707,13 @@ router.put(
               rest.profileImage !== undefined ? rest.profileImage : "",
           };
         });
+      }
+
+      if (Object.prototype.hasOwnProperty.call(updateData, "posterCostTasksCount")) {
+        updateData.posterCostTasksCount = normalizeNumber(
+          updateData.posterCostTasksCount,
+          0,
+        );
       }
 
       // If subcategory was rejected, move back to draft on edit
