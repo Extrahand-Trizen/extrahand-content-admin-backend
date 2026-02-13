@@ -1306,18 +1306,8 @@ router.post('/categories/:id/unpublish', authenticate, allowRoles('reviewer', 'c
 // POST - Bulk unpublish categories
 router.post('/categories/unpublish-bulk', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
-    const { ids } = req.body;
-    if (!Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({ error: 'No category ids provided' });
-    }
-
-    // Get all the slugs from the provided IDs
-    const categories = await TaskCategory.find({ _id: { $in: ids } }).select('slug').lean();
-    const slugs = categories.map(cat => cat.slug);
-
-    // Unpublish ALL records with these slugs (both PUBLISHED originals and APPROVED edits)
     const result = await TaskCategory.updateMany(
-      { slug: { $in: slugs } },
+      {},
       { $set: { isPublished: false, status: 'APPROVED' } },
     );
 
@@ -1578,18 +1568,8 @@ router.post('/subcategories/:id/unpublish', authenticate, allowRoles('reviewer',
 // POST - Bulk unpublish subcategories
 router.post('/subcategories/unpublish-bulk', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
-    const { ids } = req.body;
-    if (!Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({ error: 'No subcategory ids provided' });
-    }
-
-    // Get all the slugs from the provided IDs
-    const subcategories = await TaskSubcategory.find({ _id: { $in: ids } }).select('slug').lean();
-    const slugs = subcategories.map(subcat => subcat.slug);
-
-    // Unpublish ALL records with these slugs (both PUBLISHED originals and APPROVED edits)
     const result = await TaskSubcategory.updateMany(
-      { slug: { $in: slugs } },
+      {},
       { $set: { isPublished: false, status: 'APPROVED' } },
     );
 

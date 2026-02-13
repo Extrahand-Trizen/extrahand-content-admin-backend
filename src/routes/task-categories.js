@@ -72,11 +72,14 @@ router.get('/', optionalAuth, async (req, res) => {
     // List: content_access_manager = all; reviewer = pending + approved + published + rejected (no draft); unauthenticated = published only
     const isContentAccessManager = req.user && req.user.role === 'content_access_manager';
     const isReviewer = req.user && req.user.role === 'reviewer';
+    const includeUnpublished = req.query.includeUnpublished === 'true';
     let filter;
     if (isContentAccessManager) {
       filter = {};
     } else if (isReviewer) {
       filter = { status: { $in: ['PENDING_APPROVAL', 'APPROVED', 'PUBLISHED', 'REJECTED'] } };
+    } else if (includeUnpublished) {
+      filter = {};
     } else {
       filter = { isPublished: true };
     }
