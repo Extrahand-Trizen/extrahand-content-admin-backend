@@ -13,7 +13,19 @@ const EmailServiceClient = require('../utils/EmailServiceClient');
 const SALT_ROUNDS = parseInt(process.env.BCRYPT_SALT_ROUNDS) || 12;
 
 const inferCategoryTypeFromName = (name = '') => {
-  if (/\bTasks\b/i.test(name)) return 'As A Tasker';
+  const lowerName = (name || '').toLowerCase();
+  
+  // Explicitly check for Poster keywords
+  if (/\bservices\b.*\bservices\b|poster|faq|blog|guide|content/i.test(lowerName)) {
+    return 'As A Poster';
+  }
+  
+  // Check for Tasker keywords: Services (singular), Tasks, skill-related
+  if (/\bservices?\b|\btasks?\b|repair|installation|cleaner|painter|electrician|plumber|handyman|carpenter|gardener|tutor|coach|trainer|designer|developer|writer/i.test(lowerName)) {
+    return 'As A Tasker';
+  }
+  
+  // Default fallback
   return 'As A Poster';
 };
 
@@ -1300,7 +1312,7 @@ router.post('/categories/unpublish-bulk', authenticate, allowRoles('reviewer', '
     }
 
     const result = await TaskCategory.updateMany(
-      { _id: { $in: ids }, status: 'PUBLISHED' },
+      { _id: { $in: ids } },
       { $set: { isPublished: false, status: 'APPROVED' } },
     );
 
@@ -1567,7 +1579,7 @@ router.post('/subcategories/unpublish-bulk', authenticate, allowRoles('reviewer'
     }
 
     const result = await TaskSubcategory.updateMany(
-      { _id: { $in: ids }, status: 'PUBLISHED' },
+      { _id: { $in: ids } },
       { $set: { isPublished: false, status: 'APPROVED' } },
     );
 
