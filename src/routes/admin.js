@@ -1311,8 +1311,13 @@ router.post('/categories/unpublish-bulk', authenticate, allowRoles('reviewer', '
       return res.status(400).json({ error: 'No category ids provided' });
     }
 
+    // Get all the slugs from the provided IDs
+    const categories = await TaskCategory.find({ _id: { $in: ids } }).select('slug').lean();
+    const slugs = categories.map(cat => cat.slug);
+
+    // Unpublish ALL records with these slugs (both PUBLISHED originals and APPROVED edits)
     const result = await TaskCategory.updateMany(
-      { _id: { $in: ids } },
+      { slug: { $in: slugs } },
       { $set: { isPublished: false, status: 'APPROVED' } },
     );
 
@@ -1578,8 +1583,13 @@ router.post('/subcategories/unpublish-bulk', authenticate, allowRoles('reviewer'
       return res.status(400).json({ error: 'No subcategory ids provided' });
     }
 
+    // Get all the slugs from the provided IDs
+    const subcategories = await TaskSubcategory.find({ _id: { $in: ids } }).select('slug').lean();
+    const slugs = subcategories.map(subcat => subcat.slug);
+
+    // Unpublish ALL records with these slugs (both PUBLISHED originals and APPROVED edits)
     const result = await TaskSubcategory.updateMany(
-      { _id: { $in: ids } },
+      { slug: { $in: slugs } },
       { $set: { isPublished: false, status: 'APPROVED' } },
     );
 
