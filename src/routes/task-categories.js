@@ -237,7 +237,7 @@ router.post('/', authenticate, allowRoles('writer', 'reviewer', 'content_access_
       whyJoinButtonText: cleanBody.whyJoinButtonText || 'Join Extrahand',
       staticTasksSectionTitle: (cleanBody.staticTasksSectionTitle !== undefined && cleanBody.staticTasksSectionTitle !== null && cleanBody.staticTasksSectionTitle !== '')
         ? cleanBody.staticTasksSectionTitle
-        : (cleanBody.name ? `${cleanBody.name} tasks in India` : ''),
+        : (cleanBody.name ? `${cleanBody.name} tasks in Hyderabad` : ''),
       staticTasksSectionDescription: (cleanBody.staticTasksSectionDescription !== undefined && cleanBody.staticTasksSectionDescription !== null && cleanBody.staticTasksSectionDescription !== '')
         ? cleanBody.staticTasksSectionDescription
         : 'Check out what tasks people want done near you right now...',
@@ -247,7 +247,7 @@ router.post('/', authenticate, allowRoles('writer', 'reviewer', 'content_access_
         : 'Browse all tasks',
       lastUpdatedText: (cleanBody.lastUpdatedText !== undefined && cleanBody.lastUpdatedText !== null && cleanBody.lastUpdatedText !== '')
         ? cleanBody.lastUpdatedText
-        : 'Last updated on 4th Dec 2025',
+        : '',
       earningPotentialTitle: cleanBody.earningPotentialTitle || 'Discover your earning potential in India',
       earningPotentialDescription: cleanBody.earningPotentialDescription || 'Earn money with every accounting task',
       earningPotentialButtonText: cleanBody.earningPotentialButtonText || 'Join Extrahand',

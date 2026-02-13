@@ -310,7 +310,7 @@ const TaskSubcategorySchema = new mongoose.Schema(
     lastUpdatedText: {
       type: String,
       trim: true,
-      default: 'Last updated on 4th Dec 2025',
+      default: '',
     },
     staticTasks: [
       {
