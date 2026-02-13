@@ -12,6 +12,11 @@ const EmailServiceClient = require('../utils/EmailServiceClient');
 
 const SALT_ROUNDS = parseInt(process.env.BCRYPT_SALT_ROUNDS) || 12;
 
+const inferCategoryTypeFromName = (name = '') => {
+  if (/\bTasks\b/i.test(name)) return 'As A Tasker';
+  return 'As A Poster';
+};
+
 // ============================================
 // Reviewer ROUTES - Article Approval System
 // ============================================
@@ -1107,7 +1112,7 @@ router.get('/categories/all', authenticate, allowRoles('reviewer', 'content_acce
     const limitNum = parseInt(limit) || 50;
     const skip = (pageNum - 1) * limitNum;
 
-    const categoryListFields = 'name slug status isPublished createdBy reviewedBy publishedBy createdAt updatedAt';
+    const categoryListFields = 'name slug status isPublished categoryType originalCategoryId createdBy reviewedBy reviewedAt publishedBy createdAt updatedAt';
     const [categories, total] = await Promise.all([
       TaskCategory.find(filter)
         .select(categoryListFields)
@@ -1121,8 +1126,13 @@ router.get('/categories/all', authenticate, allowRoles('reviewer', 'content_acce
       TaskCategory.countDocuments(filter)
     ]);
 
+    const categoriesWithType = categories.map((item) => ({
+      ...item,
+      categoryType: item.categoryType || inferCategoryTypeFromName(item.name),
+    }));
+
     return res.status(200).json({
-      data: categories,
+      data: categoriesWithType,
       pagination: {
         page: pageNum,
         limit: limitNum,
@@ -1153,26 +1163,14 @@ router.post('/categories/:id/approve', authenticate, allowRoles('reviewer', 'con
       return res.status(400).json({ error: 'Category cannot be approved. Current status: ' + category.status });
     }
 
-    // Unified Cross-Collection Deduplication: Remove any other category/subcategory with the same slug
-    const duplicateCriteria = {
-      slug: category.slug,
-      _id: { $ne: category._id }
-    };
+    await TaskCategory.updateMany(
+      { slug: category.slug, _id: { $ne: category._id }, status: 'PUBLISHED' },
+      { $set: { isPublished: false, status: 'DRAFT', isCurrentVersion: false } },
+    );
 
-    // Delete from both collections to ensure absolute uniqueness by slug
-    // We do this regardless of hasDuplicateBySlug for simplicity
-    await Promise.all([
-      TaskCategory.deleteMany(duplicateCriteria),
-      TaskSubcategory.deleteMany({ slug: category.slug }) // Subcategories will never have the same _id anyway
-    ]);
-
-    // Update status - since we've cleared any same-slug version, this IS the current version
-    category.status = 'PUBLISHED';
-    category.isPublished = true;
+    category.status = 'APPROVED';
+    category.isPublished = false;
     category.isCurrentVersion = true;
-    category.publishedBy = req.user._id;
-    category.publishedAt = new Date();
-    category.originalCategoryId = null; // Clear the link
 
     category.reviewedBy = req.user._id;
     category.reviewedAt = new Date();
@@ -1181,7 +1179,7 @@ router.post('/categories/:id/approve', authenticate, allowRoles('reviewer', 'con
     await category.save();
 
     return res.status(200).json({
-      message: 'Category approved successfully. Old version removed if applicable.',
+      message: 'Category approved successfully.',
       category,
     });
   } catch (error) {
@@ -1293,6 +1291,29 @@ router.post('/categories/:id/unpublish', authenticate, allowRoles('reviewer', 'c
   }
 });
 
+// POST - Bulk unpublish categories
+router.post('/categories/unpublish-bulk', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'No category ids provided' });
+    }
+
+    const result = await TaskCategory.updateMany(
+      { _id: { $in: ids }, status: 'PUBLISHED' },
+      { $set: { isPublished: false, status: 'APPROVED' } },
+    );
+
+    return res.status(200).json({
+      message: 'Categories unpublished successfully',
+      modifiedCount: result.modifiedCount || 0,
+    });
+  } catch (error) {
+    console.error('Error bulk unpublishing categories:', error);
+    return res.status(500).json({ error: 'Failed to bulk unpublish categories' });
+  }
+});
+
 // ============================================
 // SUBCATEGORY APPROVAL SYSTEM (Reviewer and content_access_manager only)
 // ============================================
@@ -1350,7 +1371,7 @@ router.get('/subcategories/all', authenticate, allowRoles('reviewer', 'content_a
     const limitNum = parseInt(limit) || 50;
     const skip = (pageNum - 1) * limitNum;
 
-    const subcategoryListFields = 'name slug categorySlug status isPublished createdBy reviewedBy publishedBy createdAt updatedAt';
+    const subcategoryListFields = 'name slug categorySlug status isPublished originalSubcategoryId createdBy reviewedBy reviewedAt publishedBy createdAt updatedAt';
     const [subcategories, total] = await Promise.all([
       TaskSubcategory.find(filter)
         .select(subcategoryListFields)
@@ -1361,11 +1382,26 @@ router.get('/subcategories/all', authenticate, allowRoles('reviewer', 'content_a
         .limit(limitNum)
         .skip(skip)
         .lean(),
-      TaskSubcategory.countDocuments(filter)
+      TaskSubcategory.countDocuments(filter),
     ]);
 
+    const categorySlugSet = new Set(subcategories.map((item) => item.categorySlug).filter(Boolean));
+    let categoryTypeMap = new Map();
+    if (categorySlugSet.size > 0) {
+      const parentCategoriesBySlug = await TaskCategory.find({
+        slug: { $in: Array.from(categorySlugSet) },
+      }).select('slug categoryType').lean();
+      categoryTypeMap = new Map(parentCategoriesBySlug.map((item) => [item.slug, item.categoryType || '']));
+    }
+
+    const subcategoriesWithType = subcategories.map((item) => ({
+      ...item,
+      categoryType: categoryTypeMap.get(item.categorySlug)
+        || inferCategoryTypeFromName(item.name),
+    }));
+
     return res.status(200).json({
-      data: subcategories,
+      data: subcategoriesWithType,
       pagination: {
         page: pageNum,
         limit: limitNum,
@@ -1396,25 +1432,14 @@ router.post('/subcategories/:id/approve', authenticate, allowRoles('reviewer', '
       return res.status(400).json({ error: 'Subcategory cannot be approved. Current status: ' + subcategory.status });
     }
 
-    // Unified Cross-Collection Deduplication for Subcategories
-    const duplicateCriteria = {
-      slug: subcategory.slug,
-      _id: { $ne: subcategory._id }
-    };
+    await TaskSubcategory.updateMany(
+      { slug: subcategory.slug, _id: { $ne: subcategory._id }, status: 'PUBLISHED' },
+      { $set: { isPublished: false, status: 'DRAFT', isCurrentVersion: false } },
+    );
 
-    // Delete from both collections
-    await Promise.all([
-      TaskSubcategory.deleteMany(duplicateCriteria),
-      TaskCategory.deleteMany({ slug: subcategory.slug })
-    ]);
-
-    // Update status to PUBLISHED
-    subcategory.status = 'PUBLISHED';
-    subcategory.isPublished = true;
+    subcategory.status = 'APPROVED';
+    subcategory.isPublished = false;
     subcategory.isCurrentVersion = true;
-    subcategory.publishedBy = req.user._id;
-    subcategory.publishedAt = new Date();
-    subcategory.originalSubcategoryId = null;
 
     subcategory.reviewedBy = req.user._id;
     subcategory.reviewedAt = new Date();
@@ -1423,7 +1448,7 @@ router.post('/subcategories/:id/approve', authenticate, allowRoles('reviewer', '
     await subcategory.save();
 
     return res.status(200).json({
-      message: 'Subcategory approved successfully. Old version removed if applicable.',
+      message: 'Subcategory approved successfully.',
       subcategory,
     });
   } catch (error) {
@@ -1530,6 +1555,29 @@ router.post('/subcategories/:id/unpublish', authenticate, allowRoles('reviewer',
   } catch (error) {
     console.error('Error unpublishing subcategory:', error);
     return res.status(500).json({ error: 'Failed to unpublish subcategory' });
+  }
+});
+
+// POST - Bulk unpublish subcategories
+router.post('/subcategories/unpublish-bulk', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'No subcategory ids provided' });
+    }
+
+    const result = await TaskSubcategory.updateMany(
+      { _id: { $in: ids }, status: 'PUBLISHED' },
+      { $set: { isPublished: false, status: 'APPROVED' } },
+    );
+
+    return res.status(200).json({
+      message: 'Subcategories unpublished successfully',
+      modifiedCount: result.modifiedCount || 0,
+    });
+  } catch (error) {
+    console.error('Error bulk unpublishing subcategories:', error);
+    return res.status(500).json({ error: 'Failed to bulk unpublish subcategories' });
   }
 });
 
