@@ -14,17 +14,17 @@ const SALT_ROUNDS = parseInt(process.env.BCRYPT_SALT_ROUNDS) || 12;
 
 const inferCategoryTypeFromName = (name = '') => {
   const lowerName = (name || '').toLowerCase();
-  
+
   // Explicitly check for Poster keywords
   if (/\bservices\b.*\bservices\b|poster|faq|blog|guide|content/i.test(lowerName)) {
     return 'As A Poster';
   }
-  
+
   // Check for Tasker keywords: Services (singular), Tasks, skill-related
   if (/\bservices?\b|\btasks?\b|repair|installation|cleaner|painter|electrician|plumber|handyman|carpenter|gardener|tutor|coach|trainer|designer|developer|writer/i.test(lowerName)) {
     return 'As A Tasker';
   }
-  
+
   // Default fallback
   return 'As A Poster';
 };
@@ -276,7 +276,7 @@ router.post('/articles/:id/unpublish', authenticate, allowRoles('reviewer', 'con
 router.get('/users', authenticate, allowRoles('content_access_manager'), async (req, res) => {
   try {
     const { page = '1', limit = '20' } = req.query;
-    
+
     const pageNum = parseInt(page, 10) || 1;
     const limitNum = parseInt(limit, 10) || 20;
     const skip = (pageNum - 1) * limitNum;
@@ -435,8 +435,8 @@ router.post('/users', authenticate, allowRoles('content_access_manager'), async 
     const normalizedEmail = (email || "").toLowerCase().trim();
     const allowedDomains = ["@gmail.com", "@extrahand.in", "@cognitbotz.com", "@trizenventures.com"];
     if (!allowedDomains.some(domain => normalizedEmail.endsWith(domain))) {
-      return res.status(400).json({ 
-        error: "Only Gmail (@gmail.com), @extrahand.in, @cognitbotz.com, or @trizenventures.com addresses are allowed" 
+      return res.status(400).json({
+        error: "Only Gmail (@gmail.com), @extrahand.in, @cognitbotz.com, or @trizenventures.com addresses are allowed"
       });
     }
 
@@ -902,22 +902,24 @@ async function analyticsHandler(req, res) {
     // Articles by reviewer
     const articlesByReviewerAgg = await Article.aggregate([
       { $match: { reviewedBy: { $exists: true, $ne: null } } },
-      { $group: {
-        _id: '$reviewedBy',
-        totalReviewed: { $sum: 1 },
-        totalApproved: { $sum: { $cond: [{ $in: ['$status', ['APPROVED', 'PUBLISHED']] }, 1, 0] } },
-        totalRejected: { $sum: { $cond: [{ $eq: ['$status', 'REJECTED'] }, 1, 0] } },
-      } },
+      {
+        $group: {
+          _id: '$reviewedBy',
+          totalReviewed: { $sum: 1 },
+          totalApproved: { $sum: { $cond: [{ $in: ['$status', ['APPROVED', 'PUBLISHED']] }, 1, 0] } },
+          totalRejected: { $sum: { $cond: [{ $eq: ['$status', 'REJECTED'] }, 1, 0] } },
+        }
+      },
       { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
       { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
       { $project: reviewerProject },
       { $sort: { totalReviewed: -1 } },
     ]);
 
-    // Categories by writer
+    // Categories by writer (include missing createdBy as Unknown)
+    const categoryWriterGroupId = { $ifNull: ['$createdBy', null] };
     const categoriesByWriterAgg = await TaskCategory.aggregate([
-      { $match: { createdBy: { $exists: true, $ne: null } } },
-      { $group: { _id: '$createdBy', ...statusGroup('$createdBy'), totalCategories: { $sum: 1 } } },
+      { $group: { _id: categoryWriterGroupId, ...statusGroup(categoryWriterGroupId), totalCategories: { $sum: 1 } } },
       { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
       { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
       { $project: { ...writerProject, totalCategories: '$totalCategories' } },
@@ -927,25 +929,25 @@ async function analyticsHandler(req, res) {
     // Categories by reviewer
     const categoriesByReviewerAgg = await TaskCategory.aggregate([
       { $match: { reviewedBy: { $exists: true, $ne: null } } },
-      { $group: {
-        _id: '$reviewedBy',
-        totalReviewed: { $sum: 1 },
-        totalApproved: { $sum: { $cond: [{ $in: ['$status', ['APPROVED', 'PUBLISHED']] }, 1, 0] } },
-        totalRejected: { $sum: { $cond: [{ $eq: ['$status', 'REJECTED'] }, 1, 0] } },
-      } },
+      {
+        $group: {
+          _id: '$reviewedBy',
+          totalReviewed: { $sum: 1 },
+          totalApproved: { $sum: { $cond: [{ $in: ['$status', ['APPROVED', 'PUBLISHED']] }, 1, 0] } },
+          totalRejected: { $sum: { $cond: [{ $eq: ['$status', 'REJECTED'] }, 1, 0] } },
+        }
+      },
       { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
       { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
       { $project: reviewerProject },
       { $sort: { totalReviewed: -1 } },
     ]);
 
-    // Subcategories by writer
+    // Subcategories by writer (include missing createdBy as Unknown)
+    const subcategoryWriterGroupId = { $ifNull: ['$createdBy', null] };
     const subcategoriesByWriterAgg = await TaskSubcategory.aggregate([
-      { $match: { 
-        createdBy: { $exists: true, $ne: null },
-        categorySlug: { $exists: true, $ne: null, $ne: '' }
-      } },
-      { $group: { _id: '$createdBy', ...statusGroup('$createdBy'), totalSubcategories: { $sum: 1 } } },
+      { $match: { categorySlug: { $exists: true, $ne: null, $ne: '' } } },
+      { $group: { _id: subcategoryWriterGroupId, ...statusGroup(subcategoryWriterGroupId), totalSubcategories: { $sum: 1 } } },
       { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
       { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
       { $project: { ...writerProject, totalSubcategories: '$totalSubcategories' } },
@@ -954,16 +956,20 @@ async function analyticsHandler(req, res) {
 
     // Subcategories by reviewer
     const subcategoriesByReviewerAgg = await TaskSubcategory.aggregate([
-      { $match: { 
-        reviewedBy: { $exists: true, $ne: null },
-        categorySlug: { $exists: true, $ne: null, $ne: '' }
-      } },
-      { $group: {
-        _id: '$reviewedBy',
-        totalReviewed: { $sum: 1 },
-        totalApproved: { $sum: { $cond: [{ $in: ['$status', ['APPROVED', 'PUBLISHED']] }, 1, 0] } },
-        totalRejected: { $sum: { $cond: [{ $eq: ['$status', 'REJECTED'] }, 1, 0] } },
-      } },
+      {
+        $match: {
+          reviewedBy: { $exists: true, $ne: null },
+          categorySlug: { $exists: true, $ne: null, $ne: '' }
+        }
+      },
+      {
+        $group: {
+          _id: '$reviewedBy',
+          totalReviewed: { $sum: 1 },
+          totalApproved: { $sum: { $cond: [{ $in: ['$status', ['APPROVED', 'PUBLISHED']] }, 1, 0] } },
+          totalRejected: { $sum: { $cond: [{ $eq: ['$status', 'REJECTED'] }, 1, 0] } },
+        }
+      },
       { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
       { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
       { $project: reviewerProject },
@@ -1321,6 +1327,34 @@ router.post('/categories/unpublish-bulk', authenticate, allowRoles('reviewer', '
   }
 });
 
+// POST - Bulk unapprove categories (reset to DRAFT so writers can edit)
+router.post('/categories/unapprove-bulk', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
+  try {
+    const result = await TaskCategory.updateMany(
+      {},
+      {
+        $set: {
+          isPublished: false,
+          status: 'DRAFT',
+          reviewedBy: null,
+          reviewedAt: null,
+          reviewNotes: '',
+          publishedBy: null,
+          publishedAt: null,
+        },
+      },
+    );
+
+    return res.status(200).json({
+      message: 'Categories unapproved successfully',
+      modifiedCount: result.modifiedCount || 0,
+    });
+  } catch (error) {
+    console.error('Error bulk unapproving categories:', error);
+    return res.status(500).json({ error: 'Failed to bulk unapprove categories' });
+  }
+});
+
 // ============================================
 // SUBCATEGORY APPROVAL SYSTEM (Reviewer and content_access_manager only)
 // ============================================
@@ -1580,6 +1614,34 @@ router.post('/subcategories/unpublish-bulk', authenticate, allowRoles('reviewer'
   } catch (error) {
     console.error('Error bulk unpublishing subcategories:', error);
     return res.status(500).json({ error: 'Failed to bulk unpublish subcategories' });
+  }
+});
+
+// POST - Bulk unapprove subcategories (reset to DRAFT so writers can edit)
+router.post('/subcategories/unapprove-bulk', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
+  try {
+    const result = await TaskSubcategory.updateMany(
+      {},
+      {
+        $set: {
+          isPublished: false,
+          status: 'DRAFT',
+          reviewedBy: null,
+          reviewedAt: null,
+          reviewNotes: '',
+          publishedBy: null,
+          publishedAt: null,
+        },
+      },
+    );
+
+    return res.status(200).json({
+      message: 'Subcategories unapproved successfully',
+      modifiedCount: result.modifiedCount || 0,
+    });
+  } catch (error) {
+    console.error('Error bulk unapproving subcategories:', error);
+    return res.status(500).json({ error: 'Failed to bulk unapprove subcategories' });
   }
 });
 
