@@ -1309,6 +1309,37 @@ router.post('/categories/:id/unpublish', authenticate, allowRoles('reviewer', 'c
   }
 });
 
+// POST - Unapprove category (reset to DRAFT so writers can edit)
+router.post('/categories/:id/unapprove', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const category = await TaskCategory.findById(id);
+
+    if (!category) {
+      return res.status(404).json({ error: 'Category not found' });
+    }
+
+    category.isPublished = false;
+    category.status = 'DRAFT';
+    category.reviewedBy = null;
+    category.reviewedAt = null;
+    category.reviewNotes = '';
+    category.publishedBy = null;
+    category.publishedAt = null;
+
+    await category.save();
+
+    return res.status(200).json({
+      message: 'Category unapproved successfully',
+      category,
+    });
+  } catch (error) {
+    console.error('Error unapproving category:', error);
+    return res.status(500).json({ error: 'Failed to unapprove category' });
+  }
+});
+
 // POST - Bulk unpublish categories
 router.post('/categories/unpublish-bulk', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
@@ -1596,6 +1627,37 @@ router.post('/subcategories/:id/unpublish', authenticate, allowRoles('reviewer',
   } catch (error) {
     console.error('Error unpublishing subcategory:', error);
     return res.status(500).json({ error: 'Failed to unpublish subcategory' });
+  }
+});
+
+// POST - Unapprove subcategory (reset to DRAFT so writers can edit)
+router.post('/subcategories/:id/unapprove', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const subcategory = await TaskSubcategory.findById(id);
+
+    if (!subcategory) {
+      return res.status(404).json({ error: 'Subcategory not found' });
+    }
+
+    subcategory.isPublished = false;
+    subcategory.status = 'DRAFT';
+    subcategory.reviewedBy = null;
+    subcategory.reviewedAt = null;
+    subcategory.reviewNotes = '';
+    subcategory.publishedBy = null;
+    subcategory.publishedAt = null;
+
+    await subcategory.save();
+
+    return res.status(200).json({
+      message: 'Subcategory unapproved successfully',
+      subcategory,
+    });
+  } catch (error) {
+    console.error('Error unapproving subcategory:', error);
+    return res.status(500).json({ error: 'Failed to unapprove subcategory' });
   }
 });
 
