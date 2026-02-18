@@ -92,7 +92,7 @@ router.get('/', optionalAuth, async (req, res) => {
     
     
     // Lean list: only fields needed for list view (avoids sending hero, staticTasks, earnings, etc.)
-    const listFields = 'name slug status isPublished subcategory subcategorySlug createdBy createdAt updatedAt';
+    const listFields = 'name slug status isPublished subcategory subcategorySlug heroImage heroTitle heroDescription createdBy createdAt updatedAt';
     const categories = await TaskCategory.find(filter)
       .select(listFields)
       .populate('createdBy', 'name email')
@@ -100,7 +100,55 @@ router.get('/', optionalAuth, async (req, res) => {
       .limit(2000)
       .lean();
 
+    // Batch fetch all subcategories for all categories at once
+    const categorySlugs = categories.map(cat => cat.slug);
+    let allSubcategories = [];
+    
+    if (categorySlugs.length > 0) {
+      const subcategoryFilter = { categorySlug: { $in: categorySlugs } };
+      
+      // Apply status/published filters to subcategories based on user role
+      if (isContentAccessManager) {
+        // Content managers see all
+        // No additional filter
+      } else if (isReviewer) {
+        // Reviewers see pending + approved + published + rejected
+        subcategoryFilter.status = { $in: ['PENDING_APPROVAL', 'APPROVED', 'PUBLISHED', 'REJECTED'] };
+      } else if (includeUnpublished) {
+        // Public users with includeUnpublished=true see all (for preview pages)
+        // No additional filter
+      } else {
+        // Public users by default see only published
+        subcategoryFilter.isPublished = true;
+      }
+      
+      allSubcategories = await TaskSubcategory.find(subcategoryFilter)
+        .select('name slug categorySlug status isPublished')
+        .lean();
+    }
+    
+    // Create a map of subcategories by categorySlug for quick lookup
+    const subcategoriesByCategory = {};
+    allSubcategories.forEach(sub => {
+      if (!subcategoriesByCategory[sub.categorySlug]) {
+        subcategoriesByCategory[sub.categorySlug] = [];
+      }
+      subcategoriesByCategory[sub.categorySlug].push(sub);
+    });
+
+    // Attach subcategories to each category
     const categoriesWithSubcategories = categories.map((category) => {
+      // First, check if we have real subcategories
+      const realSubcategories = subcategoriesByCategory[category.slug] || [];
+      
+      if (realSubcategories.length > 0) {
+        return {
+          ...category,
+          subcategories: realSubcategories,
+        };
+      }
+      
+      // Fallback: use legacy subcategory field if it exists
       if (category.subcategory && category.subcategorySlug) {
         return {
           ...category,
@@ -109,12 +157,20 @@ router.get('/', optionalAuth, async (req, res) => {
               name: category.subcategory,
               slug: category.subcategorySlug,
               categorySlug: category.slug,
+              status: 'PUBLISHED',
+              isPublished: true,
             },
           ],
         };
       }
-      return category;
+      
+      // No subcategories found
+      return {
+        ...category,
+        subcategories: [],
+      };
     });
+
 
     return res.status(200).json(categoriesWithSubcategories);
   } catch (error) {
