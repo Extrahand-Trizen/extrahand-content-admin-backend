@@ -1121,6 +1121,70 @@ router.get('/categories/pending', authenticate, allowRoles('reviewer', 'content_
   }
 });
 
+// GET - Get all categories AND subcategories in one request (for All Categories tab - ensures both load)
+router.get('/categories-and-subcategories/all', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
+  try {
+    const categoryListFields = 'name slug status isPublished categoryType originalCategoryId createdBy reviewedBy reviewedAt publishedBy createdAt updatedAt';
+    const subcategoryListFields = 'name slug categorySlug status isPublished categoryType originalSubcategoryId createdBy reviewedBy reviewedAt publishedBy createdAt updatedAt';
+
+    const [categories, subcategories] = await Promise.all([
+      TaskCategory.find({})
+        .select(categoryListFields)
+        .populate('createdBy', 'name email role')
+        .populate('reviewedBy', 'name email')
+        .populate('publishedBy', 'name email')
+        .sort({ createdAt: -1 })
+        .limit(2000)
+        .lean(),
+      TaskSubcategory.find({})
+        .select(subcategoryListFields)
+        .populate('createdBy', 'name email role')
+        .populate('reviewedBy', 'name email')
+        .populate('publishedBy', 'name email')
+        .sort({ createdAt: -1 })
+        .limit(2000)
+        .lean(),
+    ]);
+
+    const categoriesWithType = categories.map((item) => ({
+      ...item,
+      categoryType: item.categoryType || inferCategoryTypeFromName(item.name),
+    }));
+
+    const categorySlugSet = new Set(subcategories.map((item) => item.categorySlug).filter(Boolean));
+    let categoryTypeMap = new Map();
+    if (categorySlugSet.size > 0) {
+      const parentCategoriesBySlug = await TaskCategory.find({
+        slug: { $in: Array.from(categorySlugSet) },
+      }).select('slug categoryType name').lean();
+      categoryTypeMap = new Map(parentCategoriesBySlug.map((item) => [item.slug, item.categoryType || inferCategoryTypeFromName(item.name)]));
+    }
+
+    const subcategoriesWithType = subcategories.map((item) => ({
+      ...item,
+      categoryType: item.categoryType || categoryTypeMap.get(item.categorySlug)
+        || inferCategoryTypeFromName(item.name),
+    }));
+
+    const total = categoriesWithType.length + subcategoriesWithType.length;
+
+    return res.status(200).json({
+      data: {
+        categories: categoriesWithType,
+        subcategories: subcategoriesWithType,
+      },
+      pagination: {
+        total,
+        categoriesTotal: categoriesWithType.length,
+        subcategoriesTotal: subcategoriesWithType.length,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching categories and subcategories:', error);
+    return res.status(500).json({ error: 'Failed to fetch categories and subcategories' });
+  }
+});
+
 // GET - Get all categories
 router.get('/categories/all', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
@@ -1454,7 +1518,7 @@ router.get('/subcategories/all', authenticate, allowRoles('reviewer', 'content_a
     const rawLimit = parseInt(limit) || 50;
     const limitNum = Math.min(2000, Math.max(1, rawLimit));
 
-    const subcategoryListFields = 'name slug categorySlug status isPublished originalSubcategoryId createdBy reviewedBy reviewedAt publishedBy createdAt updatedAt';
+    const subcategoryListFields = 'name slug categorySlug status isPublished categoryType originalSubcategoryId createdBy reviewedBy reviewedAt publishedBy createdAt updatedAt';
     const subcategories = await TaskSubcategory.find(filter)
       .select(subcategoryListFields)
       .populate('createdBy', 'name email role')
@@ -1475,7 +1539,7 @@ router.get('/subcategories/all', authenticate, allowRoles('reviewer', 'content_a
 
     const subcategoriesWithType = subcategories.map((item) => ({
       ...item,
-      categoryType: categoryTypeMap.get(item.categorySlug)
+      categoryType: item.categoryType || categoryTypeMap.get(item.categorySlug)
         || inferCategoryTypeFromName(item.name),
     }));
 

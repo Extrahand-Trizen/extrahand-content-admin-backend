@@ -67,6 +67,12 @@ const TaskSubcategorySchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    // Category type: "As a Tasker" or "As a Poster" (inherited from parent if not set)
+    categoryType: {
+      type: String,
+      trim: true,
+      default: '',
+    },
     // Hero Section
     heroTitle: {
       type: String,
