@@ -1094,8 +1094,8 @@ router.get('/categories/pending', authenticate, allowRoles('reviewer', 'content_
     const skip = (pageNum - 1) * limitNum;
 
     const filter = { status: 'PENDING_APPROVAL' };
-    const categoryListFields = 'name slug status isPublished createdBy createdAt updatedAt submissionNotes originalCategoryId';
-    const [categories, total] = await Promise.all([
+    const categoryListFields = 'name slug status isPublished categoryType createdBy createdAt updatedAt submissionNotes originalCategoryId';
+    const [categoriesRaw, total] = await Promise.all([
       TaskCategory.find(filter)
         .select(categoryListFields)
         .populate('createdBy', 'name email role')
@@ -1105,6 +1105,11 @@ router.get('/categories/pending', authenticate, allowRoles('reviewer', 'content_
         .lean(),
       TaskCategory.countDocuments(filter),
     ]);
+
+    const categories = categoriesRaw.map((item) => ({
+      ...item,
+      categoryType: item.categoryType || inferCategoryTypeFromName(item.name),
+    }));
 
     return res.status(200).json({
       data: categories,
@@ -1502,8 +1507,8 @@ router.get('/subcategories/pending', authenticate, allowRoles('reviewer', 'conte
     const skip = (pageNum - 1) * limitNum;
 
     const filter = { status: 'PENDING_APPROVAL' };
-    const subcategoryListFields = 'name slug categorySlug status isPublished createdBy createdAt updatedAt submissionNotes originalSubcategoryId';
-    const [subcategories, total] = await Promise.all([
+    const subcategoryListFields = 'name slug categorySlug status isPublished categoryType createdBy createdAt updatedAt submissionNotes originalSubcategoryId';
+    const [subcategoriesRaw, total] = await Promise.all([
       TaskSubcategory.find(filter)
         .select(subcategoryListFields)
         .populate('createdBy', 'name email role')
@@ -1514,6 +1519,20 @@ router.get('/subcategories/pending', authenticate, allowRoles('reviewer', 'conte
         .lean(),
       TaskSubcategory.countDocuments(filter),
     ]);
+
+    let categoryTypeMap = new Map();
+    const categorySlugSet = new Set(subcategoriesRaw.map((item) => item.categorySlug).filter(Boolean));
+    if (categorySlugSet.size > 0) {
+      const parentCategoriesBySlug = await TaskCategory.find({ slug: { $in: Array.from(categorySlugSet) } })
+        .select('slug categoryType name')
+        .lean();
+      categoryTypeMap = new Map(parentCategoriesBySlug.map((item) => [item.slug, item.categoryType || inferCategoryTypeFromName(item.name)]));
+    }
+
+    const subcategories = subcategoriesRaw.map((item) => ({
+      ...item,
+      categoryType: item.categoryType || categoryTypeMap.get(item.categorySlug) || inferCategoryTypeFromName(item.name),
+    }));
 
     return res.status(200).json({
       data: subcategories,
