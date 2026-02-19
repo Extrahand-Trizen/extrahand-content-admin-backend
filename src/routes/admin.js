@@ -29,6 +29,14 @@ const inferCategoryTypeFromName = (name = '') => {
   return 'As A Poster';
 };
 
+const matchesCategoryTypeFilter = (itemType, filterValue) => {
+  if (!filterValue || filterValue === 'all') return true;
+  const normalized = (itemType || '').toLowerCase();
+  if (filterValue === 'tasker') return normalized.includes('tasker');
+  if (filterValue === 'poster') return normalized.includes('poster');
+  return false;
+};
+
 // ============================================
 // Reviewer ROUTES - Article Approval System
 // ============================================
@@ -1116,7 +1124,7 @@ router.get('/categories/pending', authenticate, allowRoles('reviewer', 'content_
 // GET - Get all categories
 router.get('/categories/all', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
-    const { status, limit, page } = req.query;
+    const { status, limit, page, categoryType: categoryTypeFilter } = req.query;
     const filter = {};
 
     if (status) {
@@ -1124,37 +1132,43 @@ router.get('/categories/all', authenticate, allowRoles('reviewer', 'content_acce
     }
     // Reviewer and content_access_manager both see all statuses (including DRAFT)
 
-    // Pagination support - default to 50 items per page
     const pageNum = parseInt(page) || 1;
-    const limitNum = parseInt(limit) || 50;
-    const skip = (pageNum - 1) * limitNum;
+    const rawLimit = parseInt(limit) || 50;
+    const limitNum = Math.min(2000, Math.max(1, rawLimit));
 
     const categoryListFields = 'name slug status isPublished categoryType originalCategoryId createdBy reviewedBy reviewedAt publishedBy createdAt updatedAt';
-    const [categories, total] = await Promise.all([
-      TaskCategory.find(filter)
-        .select(categoryListFields)
-        .populate('createdBy', 'name email role')
-        .populate('reviewedBy', 'name email')
-        .populate('publishedBy', 'name email')
-        .sort({ createdAt: -1 })
-        .limit(limitNum)
-        .skip(skip)
-        .lean(),
-      TaskCategory.countDocuments(filter)
-    ]);
+    let categories = await TaskCategory.find(filter)
+      .select(categoryListFields)
+      .populate('createdBy', 'name email role')
+      .populate('reviewedBy', 'name email')
+      .populate('publishedBy', 'name email')
+      .sort({ createdAt: -1 })
+      .limit(2000)
+      .lean();
 
     const categoriesWithType = categories.map((item) => ({
       ...item,
       categoryType: item.categoryType || inferCategoryTypeFromName(item.name),
     }));
 
+    let filtered = categoriesWithType;
+    if (categoryTypeFilter && (categoryTypeFilter === 'tasker' || categoryTypeFilter === 'poster')) {
+      filtered = categoriesWithType.filter((item) =>
+        matchesCategoryTypeFilter(item.categoryType, categoryTypeFilter)
+      );
+    }
+
+    const total = filtered.length;
+    const skip = (pageNum - 1) * limitNum;
+    const paginatedData = filtered.slice(skip, skip + limitNum);
+
     return res.status(200).json({
-      data: categoriesWithType,
+      data: paginatedData,
       pagination: {
         page: pageNum,
         limit: limitNum,
         total,
-        pages: Math.ceil(total / limitNum),
+        pages: Math.ceil(total / limitNum) || 1,
       },
     });
   } catch (error) {
@@ -1428,7 +1442,7 @@ router.get('/subcategories/pending', authenticate, allowRoles('reviewer', 'conte
 // GET - Get all subcategories
 router.get('/subcategories/all', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
-    const { status, limit, page } = req.query;
+    const { status, limit, page, categoryType: categoryTypeFilter } = req.query;
     const filter = {};
 
     if (status) {
@@ -1436,32 +1450,27 @@ router.get('/subcategories/all', authenticate, allowRoles('reviewer', 'content_a
     }
     // Reviewer and content_access_manager both see all statuses (including DRAFT)
 
-    // Pagination support - default to 50 items per page
     const pageNum = parseInt(page) || 1;
-    const limitNum = parseInt(limit) || 50;
-    const skip = (pageNum - 1) * limitNum;
+    const rawLimit = parseInt(limit) || 50;
+    const limitNum = Math.min(2000, Math.max(1, rawLimit));
 
     const subcategoryListFields = 'name slug categorySlug status isPublished originalSubcategoryId createdBy reviewedBy reviewedAt publishedBy createdAt updatedAt';
-    const [subcategories, total] = await Promise.all([
-      TaskSubcategory.find(filter)
-        .select(subcategoryListFields)
-        .populate('createdBy', 'name email role')
-        .populate('reviewedBy', 'name email')
-        .populate('publishedBy', 'name email')
-        .sort({ createdAt: -1 })
-        .limit(limitNum)
-        .skip(skip)
-        .lean(),
-      TaskSubcategory.countDocuments(filter),
-    ]);
+    const subcategories = await TaskSubcategory.find(filter)
+      .select(subcategoryListFields)
+      .populate('createdBy', 'name email role')
+      .populate('reviewedBy', 'name email')
+      .populate('publishedBy', 'name email')
+      .sort({ createdAt: -1 })
+      .limit(2000)
+      .lean();
 
     const categorySlugSet = new Set(subcategories.map((item) => item.categorySlug).filter(Boolean));
     let categoryTypeMap = new Map();
     if (categorySlugSet.size > 0) {
       const parentCategoriesBySlug = await TaskCategory.find({
         slug: { $in: Array.from(categorySlugSet) },
-      }).select('slug categoryType').lean();
-      categoryTypeMap = new Map(parentCategoriesBySlug.map((item) => [item.slug, item.categoryType || '']));
+      }).select('slug categoryType name').lean();
+      categoryTypeMap = new Map(parentCategoriesBySlug.map((item) => [item.slug, item.categoryType || inferCategoryTypeFromName(item.name)]));
     }
 
     const subcategoriesWithType = subcategories.map((item) => ({
@@ -1470,13 +1479,24 @@ router.get('/subcategories/all', authenticate, allowRoles('reviewer', 'content_a
         || inferCategoryTypeFromName(item.name),
     }));
 
+    let filtered = subcategoriesWithType;
+    if (categoryTypeFilter && (categoryTypeFilter === 'tasker' || categoryTypeFilter === 'poster')) {
+      filtered = subcategoriesWithType.filter((item) =>
+        matchesCategoryTypeFilter(item.categoryType, categoryTypeFilter)
+      );
+    }
+
+    const total = filtered.length;
+    const skip = (pageNum - 1) * limitNum;
+    const paginatedData = filtered.slice(skip, skip + limitNum);
+
     return res.status(200).json({
-      data: subcategoriesWithType,
+      data: paginatedData,
       pagination: {
         page: pageNum,
         limit: limitNum,
         total,
-        pages: Math.ceil(total / limitNum),
+        pages: Math.ceil(total / limitNum) || 1,
       },
     });
   } catch (error) {
