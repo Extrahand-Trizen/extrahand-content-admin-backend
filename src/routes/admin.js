@@ -1512,35 +1512,56 @@ router.get('/subcategories/pending', authenticate, allowRoles('reviewer', 'conte
 
 // GET - Get all subcategories
 router.get('/subcategories/all', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
+  const { status, limit, page, categoryType: categoryTypeFilter } = req.query;
+  const filter = { categorySlug: { $exists: true, $ne: null, $ne: '' } };
+
+  if (status) {
+    filter.status = status;
+  }
+
+  const pageNum = parseInt(page) || 1;
+  const rawLimit = parseInt(limit) || 50;
+  const limitNum = Math.min(2000, Math.max(1, rawLimit));
+
+  const subcategoryListFields = 'name slug categorySlug status isPublished categoryType originalSubcategoryId createdBy reviewedBy reviewedAt publishedBy createdAt updatedAt';
+
+  let subcategories = [];
   try {
-    const { status, limit, page, categoryType: categoryTypeFilter } = req.query;
-    const filter = { categorySlug: { $exists: true, $ne: null, $ne: '' } };
-
-    if (status) {
-      filter.status = status;
-    }
-    // Reviewer and content_access_manager both see all statuses (including DRAFT)
-
-    const pageNum = parseInt(page) || 1;
-    const rawLimit = parseInt(limit) || 50;
-    const limitNum = Math.min(2000, Math.max(1, rawLimit));
-
-    const subcategoryListFields = 'name slug categorySlug status isPublished categoryType originalSubcategoryId createdBy reviewedBy reviewedAt publishedBy createdAt updatedAt';
-    const subcategories = await TaskSubcategory.find(filter)
+    // Try with populate first
+    subcategories = await TaskSubcategory.find(filter)
       .select(subcategoryListFields)
-      .populate({ path: 'createdBy', select: 'name email role', options: { strictPopulate: false } })
-      .populate({ path: 'reviewedBy', select: 'name email', options: { strictPopulate: false } })
-      .populate({ path: 'publishedBy', select: 'name email', options: { strictPopulate: false } })
+      .populate('createdBy', 'name email role')
+      .populate('reviewedBy', 'name email')
+      .populate('publishedBy', 'name email')
       .sort({ createdAt: -1 })
       .limit(2000)
       .lean();
+  } catch (populateErr) {
+    console.error('Subcategories fetch with populate failed, retrying without:', populateErr.message);
+    try {
+      // Fallback: fetch without populate (refs stay as ObjectIds; frontend shows "Unknown" for creator)
+      subcategories = await TaskSubcategory.find(filter)
+        .select(subcategoryListFields)
+        .sort({ createdAt: -1 })
+        .limit(2000)
+        .lean();
+    } catch (fallbackErr) {
+      console.error('Subcategories fetch failed:', fallbackErr);
+      return res.status(500).json({
+        error: 'Failed to fetch subcategories',
+        details: process.env.NODE_ENV === 'development' ? fallbackErr.message : undefined,
+      });
+    }
+  }
 
+  try {
     const categorySlugSet = new Set(subcategories.map((item) => item.categorySlug).filter(Boolean));
     let categoryTypeMap = new Map();
     if (categorySlugSet.size > 0) {
-      const parentCategoriesBySlug = await TaskCategory.find({
-        slug: { $in: Array.from(categorySlugSet) },
-      }).select('slug categoryType name').lean();
+      const slugs = Array.from(categorySlugSet);
+      const parentCategoriesBySlug = await TaskCategory.find({ slug: { $in: slugs } })
+        .select('slug categoryType name')
+        .lean();
       categoryTypeMap = new Map(parentCategoriesBySlug.map((item) => [item.slug, item.categoryType || inferCategoryTypeFromName(item.name)]));
     }
 
@@ -1571,8 +1592,11 @@ router.get('/subcategories/all', authenticate, allowRoles('reviewer', 'content_a
       },
     });
   } catch (error) {
-    console.error('Error fetching subcategories:', error);
-    return res.status(500).json({ error: 'Failed to fetch subcategories' });
+    console.error('Error processing subcategories:', error);
+    return res.status(500).json({
+      error: 'Failed to fetch subcategories',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined,
+    });
   }
 });
 
