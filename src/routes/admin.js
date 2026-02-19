@@ -1127,24 +1127,31 @@ router.get('/categories-and-subcategories/all', authenticate, allowRoles('review
     const categoryListFields = 'name slug status isPublished categoryType originalCategoryId createdBy reviewedBy reviewedAt publishedBy createdAt updatedAt';
     const subcategoryListFields = 'name slug categorySlug status isPublished categoryType originalSubcategoryId createdBy reviewedBy reviewedAt publishedBy createdAt updatedAt';
 
-    const [categories, subcategories] = await Promise.all([
-      TaskCategory.find({})
-        .select(categoryListFields)
-        .populate('createdBy', 'name email role')
-        .populate('reviewedBy', 'name email')
-        .populate('publishedBy', 'name email')
-        .sort({ createdAt: -1 })
-        .limit(2000)
-        .lean(),
-      TaskSubcategory.find({})
+    // Filter subcategories: only those with valid categorySlug (matches analytics pattern, avoids orphan/invalid docs)
+    const subcategoryFilter = { categorySlug: { $exists: true, $ne: null, $ne: '' } };
+
+    const categories = await TaskCategory.find({})
+      .select(categoryListFields)
+      .populate('createdBy', 'name email role')
+      .populate('reviewedBy', 'name email')
+      .populate('publishedBy', 'name email')
+      .sort({ createdAt: -1 })
+      .limit(2000)
+      .lean();
+
+    let subcategories = [];
+    try {
+      subcategories = await TaskSubcategory.find(subcategoryFilter)
         .select(subcategoryListFields)
-        .populate('createdBy', 'name email role')
-        .populate('reviewedBy', 'name email')
-        .populate('publishedBy', 'name email')
+        .populate({ path: 'createdBy', select: 'name email role', options: { strictPopulate: false } })
+        .populate({ path: 'reviewedBy', select: 'name email', options: { strictPopulate: false } })
+        .populate({ path: 'publishedBy', select: 'name email', options: { strictPopulate: false } })
         .sort({ createdAt: -1 })
         .limit(2000)
-        .lean(),
-    ]);
+        .lean();
+    } catch (subErr) {
+      console.error('Subcategories fetch failed (returning categories only):', subErr.message);
+    }
 
     const categoriesWithType = categories.map((item) => ({
       ...item,
@@ -1507,7 +1514,7 @@ router.get('/subcategories/pending', authenticate, allowRoles('reviewer', 'conte
 router.get('/subcategories/all', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
     const { status, limit, page, categoryType: categoryTypeFilter } = req.query;
-    const filter = {};
+    const filter = { categorySlug: { $exists: true, $ne: null, $ne: '' } };
 
     if (status) {
       filter.status = status;
@@ -1521,9 +1528,9 @@ router.get('/subcategories/all', authenticate, allowRoles('reviewer', 'content_a
     const subcategoryListFields = 'name slug categorySlug status isPublished categoryType originalSubcategoryId createdBy reviewedBy reviewedAt publishedBy createdAt updatedAt';
     const subcategories = await TaskSubcategory.find(filter)
       .select(subcategoryListFields)
-      .populate('createdBy', 'name email role')
-      .populate('reviewedBy', 'name email')
-      .populate('publishedBy', 'name email')
+      .populate({ path: 'createdBy', select: 'name email role', options: { strictPopulate: false } })
+      .populate({ path: 'reviewedBy', select: 'name email', options: { strictPopulate: false } })
+      .populate({ path: 'publishedBy', select: 'name email', options: { strictPopulate: false } })
       .sort({ createdAt: -1 })
       .limit(2000)
       .lean();
