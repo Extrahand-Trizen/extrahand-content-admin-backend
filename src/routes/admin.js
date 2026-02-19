@@ -1121,9 +1121,8 @@ router.get('/categories/all', authenticate, allowRoles('reviewer', 'content_acce
 
     if (status) {
       filter.status = status;
-    } else if (req.user.role === 'reviewer') {
-      filter.status = { $in: ['PENDING_APPROVAL', 'APPROVED', 'PUBLISHED', 'REJECTED'] };
     }
+    // Reviewer and content_access_manager both see all statuses (including DRAFT)
 
     // Pagination support - default to 50 items per page
     const pageNum = parseInt(page) || 1;
@@ -1434,9 +1433,8 @@ router.get('/subcategories/all', authenticate, allowRoles('reviewer', 'content_a
 
     if (status) {
       filter.status = status;
-    } else if (req.user.role === 'reviewer') {
-      filter.status = { $in: ['PENDING_APPROVAL', 'APPROVED', 'PUBLISHED', 'REJECTED'] };
     }
+    // Reviewer and content_access_manager both see all statuses (including DRAFT)
 
     // Pagination support - default to 50 items per page
     const pageNum = parseInt(page) || 1;
