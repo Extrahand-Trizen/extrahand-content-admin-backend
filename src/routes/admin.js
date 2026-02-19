@@ -1121,69 +1121,87 @@ router.get('/categories/pending', authenticate, allowRoles('reviewer', 'content_
   }
 });
 
-// GET - Get all categories AND subcategories in one request (for All Categories tab - ensures both load)
+// GET - Get all categories AND subcategories in one request (paginated, default limit 25)
 router.get('/categories-and-subcategories/all', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
+    const { page = '1', limit = '25' } = req.query;
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 25));
+    const fetchLimit = Math.min(200, pageNum * limitNum);
+
     const categoryListFields = 'name slug status isPublished categoryType originalCategoryId createdBy reviewedBy reviewedAt publishedBy createdAt updatedAt';
     const subcategoryListFields = 'name slug categorySlug status isPublished categoryType originalSubcategoryId createdBy reviewedBy reviewedAt publishedBy createdAt updatedAt';
-
-    // Filter subcategories: only those with valid categorySlug (matches analytics pattern, avoids orphan/invalid docs)
     const subcategoryFilter = { categorySlug: { $exists: true, $ne: null, $ne: '' } };
 
-    const categories = await TaskCategory.find({})
-      .select(categoryListFields)
-      .populate('createdBy', 'name email role')
-      .populate('reviewedBy', 'name email')
-      .populate('publishedBy', 'name email')
-      .sort({ createdAt: -1 })
-      .limit(2000)
-      .lean();
-
-    let subcategories = [];
+    let subcategoriesRaw = [];
+    const [categoriesRaw, categoriesTotal, subcategoriesTotal] = await Promise.all([
+      TaskCategory.find({})
+        .select(categoryListFields)
+        .populate('createdBy', 'name email role')
+        .populate('reviewedBy', 'name email')
+        .populate('publishedBy', 'name email')
+        .sort({ createdAt: -1 })
+        .limit(fetchLimit)
+        .allowDiskUse(true)
+        .lean(),
+      TaskCategory.countDocuments({}),
+      TaskSubcategory.countDocuments(subcategoryFilter),
+    ]);
     try {
-      subcategories = await TaskSubcategory.find(subcategoryFilter)
+      subcategoriesRaw = await TaskSubcategory.find(subcategoryFilter)
         .select(subcategoryListFields)
         .populate({ path: 'createdBy', select: 'name email role', options: { strictPopulate: false } })
         .populate({ path: 'reviewedBy', select: 'name email', options: { strictPopulate: false } })
         .populate({ path: 'publishedBy', select: 'name email', options: { strictPopulate: false } })
         .sort({ createdAt: -1 })
-        .limit(2000)
+        .limit(fetchLimit)
+        .allowDiskUse(true)
         .lean();
     } catch (subErr) {
       console.error('Subcategories fetch failed (returning categories only):', subErr.message);
     }
 
-    const categoriesWithType = categories.map((item) => ({
+    const categoriesWithType = categoriesRaw.map((item) => ({
       ...item,
+      type: 'Category',
       categoryType: item.categoryType || inferCategoryTypeFromName(item.name),
     }));
 
-    const categorySlugSet = new Set(subcategories.map((item) => item.categorySlug).filter(Boolean));
+    const categorySlugSet = new Set(subcategoriesRaw.map((item) => item.categorySlug).filter(Boolean));
     let categoryTypeMap = new Map();
     if (categorySlugSet.size > 0) {
-      const parentCategoriesBySlug = await TaskCategory.find({
-        slug: { $in: Array.from(categorySlugSet) },
-      }).select('slug categoryType name').lean();
+      const parentCategoriesBySlug = await TaskCategory.find({ slug: { $in: Array.from(categorySlugSet) } })
+        .select('slug categoryType name')
+        .lean();
       categoryTypeMap = new Map(parentCategoriesBySlug.map((item) => [item.slug, item.categoryType || inferCategoryTypeFromName(item.name)]));
     }
 
-    const subcategoriesWithType = subcategories.map((item) => ({
+    const subcategoriesWithType = subcategoriesRaw.map((item) => ({
       ...item,
-      categoryType: item.categoryType || categoryTypeMap.get(item.categorySlug)
-        || inferCategoryTypeFromName(item.name),
+      type: 'Subcategory',
+      categoryType: item.categoryType || categoryTypeMap.get(item.categorySlug) || inferCategoryTypeFromName(item.name),
     }));
 
-    const total = categoriesWithType.length + subcategoriesWithType.length;
+    const merged = [...categoriesWithType, ...subcategoriesWithType]
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const total = categoriesTotal + subcategoriesTotal;
+    const skip = (pageNum - 1) * limitNum;
+    const paginatedData = merged.slice(skip, skip + limitNum);
+    const categoriesPage = paginatedData.filter((i) => i.type === 'Category');
+    const subcategoriesPage = paginatedData.filter((i) => i.type === 'Subcategory');
 
     return res.status(200).json({
       data: {
-        categories: categoriesWithType,
-        subcategories: subcategoriesWithType,
+        categories: categoriesPage,
+        subcategories: subcategoriesPage,
       },
       pagination: {
+        page: pageNum,
+        limit: limitNum,
         total,
-        categoriesTotal: categoriesWithType.length,
-        subcategoriesTotal: subcategoriesWithType.length,
+        pages: Math.ceil(total / limitNum) || 1,
+        categoriesTotal: categoriesTotal,
+        subcategoriesTotal: subcategoriesTotal,
       },
     });
   } catch (error) {
@@ -1203,38 +1221,39 @@ router.get('/categories/all', authenticate, allowRoles('reviewer', 'content_acce
     }
     // Reviewer and content_access_manager both see all statuses (including DRAFT)
 
-    const pageNum = parseInt(page) || 1;
-    const rawLimit = parseInt(limit) || 50;
-    const limitNum = Math.min(2000, Math.max(1, rawLimit));
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 25));
+    const skip = (pageNum - 1) * limitNum;
 
     const categoryListFields = 'name slug status isPublished categoryType originalCategoryId createdBy reviewedBy reviewedAt publishedBy createdAt updatedAt';
-    let categories = await TaskCategory.find(filter)
-      .select(categoryListFields)
-      .populate('createdBy', 'name email role')
-      .populate('reviewedBy', 'name email')
-      .populate('publishedBy', 'name email')
-      .sort({ createdAt: -1 })
-      .limit(2000)
-      .lean();
+    const [categories, total] = await Promise.all([
+      TaskCategory.find(filter)
+        .select(categoryListFields)
+        .populate('createdBy', 'name email role')
+        .populate('reviewedBy', 'name email')
+        .populate('publishedBy', 'name email')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limitNum)
+        .allowDiskUse(true)
+        .lean(),
+      TaskCategory.countDocuments(filter),
+    ]);
 
     const categoriesWithType = categories.map((item) => ({
       ...item,
       categoryType: item.categoryType || inferCategoryTypeFromName(item.name),
     }));
 
-    let filtered = categoriesWithType;
+    let data = categoriesWithType;
     if (categoryTypeFilter && (categoryTypeFilter === 'tasker' || categoryTypeFilter === 'poster')) {
-      filtered = categoriesWithType.filter((item) =>
+      data = categoriesWithType.filter((item) =>
         matchesCategoryTypeFilter(item.categoryType, categoryTypeFilter)
       );
     }
 
-    const total = filtered.length;
-    const skip = (pageNum - 1) * limitNum;
-    const paginatedData = filtered.slice(skip, skip + limitNum);
-
     return res.status(200).json({
-      data: paginatedData,
+      data,
       pagination: {
         page: pageNum,
         limit: limitNum,
@@ -1491,6 +1510,7 @@ router.get('/subcategories/pending', authenticate, allowRoles('reviewer', 'conte
         .sort({ createdAt: -1 })
         .limit(limitNum)
         .skip(skip)
+        .allowDiskUse(true)
         .lean(),
       TaskSubcategory.countDocuments(filter),
     ]);
@@ -1510,7 +1530,7 @@ router.get('/subcategories/pending', authenticate, allowRoles('reviewer', 'conte
   }
 });
 
-// GET - Get all subcategories
+// GET - Get all subcategories (paginated, default limit 25)
 router.get('/subcategories/all', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   const { status, limit, page, categoryType: categoryTypeFilter } = req.query;
   const filter = { categorySlug: { $exists: true, $ne: null, $ne: '' } };
@@ -1519,32 +1539,41 @@ router.get('/subcategories/all', authenticate, allowRoles('reviewer', 'content_a
     filter.status = status;
   }
 
-  const pageNum = parseInt(page) || 1;
-  const rawLimit = parseInt(limit) || 50;
-  const limitNum = Math.min(2000, Math.max(1, rawLimit));
+  const pageNum = Math.max(1, parseInt(page) || 1);
+  const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 25));
+  const skip = (pageNum - 1) * limitNum;
 
   const subcategoryListFields = 'name slug categorySlug status isPublished categoryType originalSubcategoryId createdBy reviewedBy reviewedAt publishedBy createdAt updatedAt';
 
   let subcategories = [];
+  let total = 0;
   try {
-    // Try with populate first
-    subcategories = await TaskSubcategory.find(filter)
-      .select(subcategoryListFields)
-      .populate('createdBy', 'name email role')
-      .populate('reviewedBy', 'name email')
-      .populate('publishedBy', 'name email')
-      .sort({ createdAt: -1 })
-      .limit(2000)
-      .lean();
+    [subcategories, total] = await Promise.all([
+      TaskSubcategory.find(filter)
+        .select(subcategoryListFields)
+        .populate('createdBy', 'name email role')
+        .populate('reviewedBy', 'name email')
+        .populate('publishedBy', 'name email')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limitNum)
+        .allowDiskUse(true)
+        .lean(),
+      TaskSubcategory.countDocuments(filter),
+    ]);
   } catch (populateErr) {
     console.error('Subcategories fetch with populate failed, retrying without:', populateErr.message);
     try {
-      // Fallback: fetch without populate (refs stay as ObjectIds; frontend shows "Unknown" for creator)
-      subcategories = await TaskSubcategory.find(filter)
-        .select(subcategoryListFields)
-        .sort({ createdAt: -1 })
-        .limit(2000)
-        .lean();
+      [subcategories, total] = await Promise.all([
+        TaskSubcategory.find(filter)
+          .select(subcategoryListFields)
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limitNum)
+          .allowDiskUse(true)
+          .lean(),
+        TaskSubcategory.countDocuments(filter),
+      ]);
     } catch (fallbackErr) {
       console.error('Subcategories fetch failed:', fallbackErr);
       return res.status(500).json({
@@ -1571,19 +1600,15 @@ router.get('/subcategories/all', authenticate, allowRoles('reviewer', 'content_a
         || inferCategoryTypeFromName(item.name),
     }));
 
-    let filtered = subcategoriesWithType;
+    let data = subcategoriesWithType;
     if (categoryTypeFilter && (categoryTypeFilter === 'tasker' || categoryTypeFilter === 'poster')) {
-      filtered = subcategoriesWithType.filter((item) =>
+      data = subcategoriesWithType.filter((item) =>
         matchesCategoryTypeFilter(item.categoryType, categoryTypeFilter)
       );
     }
 
-    const total = filtered.length;
-    const skip = (pageNum - 1) * limitNum;
-    const paginatedData = filtered.slice(skip, skip + limitNum);
-
     return res.status(200).json({
-      data: paginatedData,
+      data,
       pagination: {
         page: pageNum,
         limit: limitNum,
