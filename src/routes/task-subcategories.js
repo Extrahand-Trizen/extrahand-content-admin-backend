@@ -60,7 +60,7 @@ router.get("/", optionalAuth, async (req, res) => {
       }
       if (!canPreview) {
         // Only return published subcategory (unpublished must not be visible on main website)
-        filter.isPublished = true;
+        filter.$or = [{ isPublished: true }, { status: 'PUBLISHED' }];
       }
 
       const subcategory = await TaskSubcategory.findOne(filter).populate(
@@ -87,7 +87,7 @@ router.get("/", optionalAuth, async (req, res) => {
         },
       };
     } else {
-      filter = { isPublished: true };
+      filter = { $or: [{ isPublished: true }, { status: 'PUBLISHED' }] };
     }
     
     // Optional author filter for content_access_manager
@@ -116,14 +116,14 @@ router.get("/", optionalAuth, async (req, res) => {
 
       // Backward-compatible fallback: derive a single subcategory from legacy fields on TaskCategory
       const parentCategory = await TaskCategory.findOne({ slug: categorySlug })
-        .select("subcategory subcategorySlug isPublished")
+        .select("subcategory subcategorySlug isPublished status")
         .lean();
 
       const shouldExposeLegacy =
         parentCategory &&
         parentCategory.subcategory &&
         parentCategory.subcategorySlug &&
-        (filter.isPublished ? parentCategory.isPublished === true : true);
+        (!filter.$or || parentCategory.isPublished === true || parentCategory.status === "PUBLISHED");
 
       if (shouldExposeLegacy) {
         return res.status(200).json([
