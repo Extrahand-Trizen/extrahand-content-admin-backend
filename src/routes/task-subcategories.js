@@ -59,8 +59,12 @@ router.get("/", optionalAuth, async (req, res) => {
         filter.categorySlug = categorySlug;
       }
       if (!canPreview) {
-        // Only return published subcategory (unpublished must not be visible on main website)
-        filter.$or = [{ isPublished: true }, { status: 'PUBLISHED' }];
+        // Public website can show approved content in addition to fully published items.
+        filter.$or = [
+          { isPublished: true },
+          { status: 'PUBLISHED' },
+          { status: 'APPROVED' },
+        ];
       }
 
       const subcategory = await TaskSubcategory.findOne(filter).populate(
@@ -87,7 +91,13 @@ router.get("/", optionalAuth, async (req, res) => {
         },
       };
     } else {
-      filter = { $or: [{ isPublished: true }, { status: 'PUBLISHED' }] };
+      filter = {
+        $or: [
+          { isPublished: true },
+          { status: 'PUBLISHED' },
+          { status: 'APPROVED' },
+        ],
+      };
     }
     
     // Optional author filter for content_access_manager
@@ -123,7 +133,7 @@ router.get("/", optionalAuth, async (req, res) => {
         parentCategory &&
         parentCategory.subcategory &&
         parentCategory.subcategorySlug &&
-        (!filter.$or || parentCategory.isPublished === true || parentCategory.status === "PUBLISHED");
+        (!filter.$or || parentCategory.isPublished === true || ["PUBLISHED", "APPROVED"].includes(parentCategory.status));
 
       if (shouldExposeLegacy) {
         return res.status(200).json([

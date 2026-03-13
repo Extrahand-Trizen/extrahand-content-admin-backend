@@ -41,7 +41,7 @@ router.get('/', optionalAuth, async (req, res) => {
       // Public: published category only
       const item = await TaskCategory.findOne({
         slug,
-        $or: [{ isPublished: true }, { status: 'PUBLISHED' }],
+        $or: [{ isPublished: true }, { status: 'PUBLISHED' }, { status: 'APPROVED' }],
       })
         .populate('createdBy', 'name email');
 
@@ -52,7 +52,7 @@ router.get('/', optionalAuth, async (req, res) => {
       // Public: published subcategory only
       const subcategory = await TaskSubcategory.findOne({
         slug,
-        $or: [{ isPublished: true }, { status: 'PUBLISHED' }],
+        $or: [{ isPublished: true }, { status: 'PUBLISHED' }, { status: 'APPROVED' }],
       })
         .populate('createdBy', 'name email');
 
@@ -88,7 +88,7 @@ router.get('/', optionalAuth, async (req, res) => {
       filter = {};
     } else {
       // Public users see only published categories
-      filter = { $or: [{ isPublished: true }, { status: 'PUBLISHED' }] };
+      filter = { $or: [{ isPublished: true }, { status: 'PUBLISHED' }, { status: 'APPROVED' }] };
     }
     
     // Optional author filter for content_access_manager
@@ -126,7 +126,7 @@ router.get('/', optionalAuth, async (req, res) => {
         // No additional filter
       } else {
         // Public users by default see only published
-        subcategoryFilter.$or = [{ isPublished: true }, { status: 'PUBLISHED' }];
+        subcategoryFilter.$or = [{ isPublished: true }, { status: 'PUBLISHED' }, { status: 'APPROVED' }];
       }
       
       allSubcategories = await TaskSubcategory.find(subcategoryFilter)
