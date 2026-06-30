@@ -115,7 +115,13 @@ router.get('/', authenticate, async (req, res) => {
     }
     if (pageType) filter.pageType = pageType;
     if (cityId) filter.cityId = cityId;
-    if (status) filter.status = status;
+    if (status) {
+      if (status.includes(',')) {
+        filter.status = { $in: status.split(',') };
+      } else {
+        filter.status = status;
+      }
+    }
     if (categorySlug) filter.categorySlug = categorySlug;
     if (search) {
       filter.$or = [
@@ -156,13 +162,19 @@ router.get('/', authenticate, async (req, res) => {
 });
 
 // GET - Get published page by slug (public, used by website)
+// Only returns the current published version — never DRAFT, PENDING_APPROVAL, APPROVED, or UNPUBLISHED
 router.get('/published', async (req, res) => {
   try {
     const { slug } = req.query;
     if (!slug) {
       return res.status(400).json({ error: 'Slug is required' });
     }
-    const page = await SeoPage.findOne({ slug }).lean();
+    const page = await SeoPage.findOne({
+      slug,
+      status: 'PUBLISHED',
+      isPublished: true,
+      isCurrentVersion: true,
+    }).lean();
     if (!page) {
       return res.status(404).json({ error: 'Page not found' });
     }
@@ -351,7 +363,7 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_acces
     if (existing.status === 'PUBLISHED' && req.user.role === 'writer') {
       const existingDraft = await SeoPage.findOne({
         originalPageId: existing._id,
-        status: { $in: ['DRAFT', 'PENDING_APPROVAL', 'REJECTED'] },
+        status: { $in: ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED'] },
       });
 
       if (existingDraft) {

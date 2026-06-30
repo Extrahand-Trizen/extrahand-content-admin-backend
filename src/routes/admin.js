@@ -1880,6 +1880,9 @@ router.post('/subcategories/unapprove-bulk', authenticate, allowRoles('reviewer'
 // ============================================
 
 const SeoPage = require('../models/SeoPage');
+const City = require('../models/City');
+const Area = require('../models/Area');
+const { generateSlug } = require('../utils/seoPageUtils');
 
 // POST - Approve SEO page
 router.post('/seo-pages/:id/approve', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
@@ -1951,13 +1954,30 @@ router.post('/seo-pages/:id/publish', authenticate, allowRoles('reviewer', 'cont
       return res.status(400).json({ error: 'SEO page must be approved before publishing' });
     }
 
-    // Remove other versions with same slug
-    await SeoPage.deleteMany({
-      slug: page.slug,
-      _id: { $ne: page._id },
-    });
-    page.originalPageId = null;
+    // Archive the old published version (if this page was created as a draft of an existing published page)
+    if (page.originalPageId) {
+      const oldPublished = await SeoPage.findById(page.originalPageId);
+      if (oldPublished && oldPublished.status === 'PUBLISHED') {
+        const archiveSlug = `${oldPublished.slug}--archived-${Date.now()}`;
+        oldPublished.status = 'ARCHIVED';
+        oldPublished.isPublished = false;
+        oldPublished.isCurrentVersion = false;
+        oldPublished.slug = archiveSlug;
+        await oldPublished.save();
+      }
+    }
 
+    // Regenerate the real slug for the new version (draft copies have mangled slugs)
+    const city = await City.findById(page.cityId);
+    const area = page.areaId ? await Area.findById(page.areaId) : null;
+    const realSlug = generateSlug(
+      page.categorySlug,
+      city ? city.slug : page.citySlug,
+      area ? area.slug : null
+    );
+
+    page.slug = realSlug;
+    page.originalPageId = null;
     page.status = 'PUBLISHED';
     page.isPublished = true;
     page.isCurrentVersion = true;
@@ -1985,7 +2005,8 @@ router.post('/seo-pages/:id/unpublish', authenticate, allowRoles('reviewer', 'co
     }
 
     page.isPublished = false;
-    page.status = 'APPROVED';
+    page.status = 'UNPUBLISHED';
+    page.isCurrentVersion = false;
 
     await page.save();
 

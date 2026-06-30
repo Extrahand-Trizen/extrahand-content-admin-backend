@@ -47,7 +47,7 @@ const seoPageSchema = new mongoose.Schema({
 
   status: {
     type: String,
-    enum: ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'PUBLISHED', 'REJECTED'],
+    enum: ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'PUBLISHED', 'UNPUBLISHED', 'REJECTED', 'ARCHIVED'],
     default: 'DRAFT',
   },
   isPublished: { type: Boolean, default: false },
