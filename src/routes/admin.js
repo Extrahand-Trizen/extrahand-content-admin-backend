@@ -777,6 +777,9 @@ router.get('/dashboard/stats', authenticate, allowRoles('reviewer', 'writer', 'c
       approvedSubcategories,
       publishedSubcategories,
       rejectedSubcategories,
+      pendingSeoPages,
+      approvedSeoPages,
+      publishedSeoPages,
     ] = await Promise.all([
       Article.countDocuments(articleFilter),
       Article.countDocuments({ ...articleFilter, status: 'PENDING_APPROVAL' }),
@@ -796,6 +799,9 @@ router.get('/dashboard/stats', authenticate, allowRoles('reviewer', 'writer', 'c
       TaskSubcategory.countDocuments({ ...categoryFilter, status: 'APPROVED' }),
       TaskSubcategory.countDocuments({ ...categoryFilter, status: 'PUBLISHED' }),
       TaskSubcategory.countDocuments({ ...categoryFilter, status: 'REJECTED' }),
+      SeoPage.countDocuments({ status: 'PENDING_APPROVAL' }),
+      SeoPage.countDocuments({ status: 'APPROVED' }),
+      SeoPage.countDocuments({ status: 'PUBLISHED' }),
     ]);
 
     return res.status(200).json({
@@ -819,6 +825,11 @@ router.get('/dashboard/stats', authenticate, allowRoles('reviewer', 'writer', 'c
         approved: approvedSubcategories,
         published: publishedSubcategories,
         rejected: rejectedSubcategories,
+      },
+      seoPages: {
+        pending: pendingSeoPages,
+        approved: approvedSeoPages,
+        published: publishedSeoPages,
       },
       users: {
         total: totalUsers,
@@ -1861,6 +1872,155 @@ router.post('/subcategories/unapprove-bulk', authenticate, allowRoles('reviewer'
   } catch (error) {
     console.error('Error bulk unapproving subcategories:', error);
     return res.status(500).json({ error: 'Failed to bulk unapprove subcategories' });
+  }
+});
+
+// ============================================
+// SEO PAGES APPROVAL SYSTEM (Reviewer and content_access_manager only)
+// ============================================
+
+const SeoPage = require('../models/SeoPage');
+
+// POST - Approve SEO page
+router.post('/seo-pages/:id/approve', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const page = await SeoPage.findById(id);
+    if (!page) {
+      return res.status(404).json({ error: 'SEO page not found' });
+    }
+
+    if (page.status !== 'PENDING_APPROVAL') {
+      return res.status(400).json({ error: 'SEO page cannot be approved. Current status: ' + page.status });
+    }
+
+    page.status = 'APPROVED';
+    page.reviewedBy = req.user._id;
+
+    await page.save();
+
+    return res.status(200).json({
+      message: 'SEO page approved successfully.',
+      data: page,
+    });
+  } catch (error) {
+    console.error('Error approving SEO page:', error);
+    return res.status(500).json({ error: 'Failed to approve SEO page' });
+  }
+});
+
+// POST - Reject SEO page
+router.post('/seo-pages/:id/reject', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    const page = await SeoPage.findById(id);
+    if (!page) {
+      return res.status(404).json({ error: 'SEO page not found' });
+    }
+
+    page.status = 'REJECTED';
+    page.reviewedBy = req.user._id;
+    page.rejectedReason = reason || '';
+
+    await page.save();
+
+    return res.status(200).json({
+      message: 'SEO page rejected',
+      data: page,
+    });
+  } catch (error) {
+    console.error('Error rejecting SEO page:', error);
+    return res.status(500).json({ error: 'Failed to reject SEO page' });
+  }
+});
+
+// POST - Publish SEO page
+router.post('/seo-pages/:id/publish', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const page = await SeoPage.findById(id);
+    if (!page) {
+      return res.status(404).json({ error: 'SEO page not found' });
+    }
+
+    if (page.status !== 'APPROVED') {
+      return res.status(400).json({ error: 'SEO page must be approved before publishing' });
+    }
+
+    // Remove other versions with same slug
+    await SeoPage.deleteMany({
+      slug: page.slug,
+      _id: { $ne: page._id },
+    });
+    page.originalPageId = null;
+
+    page.status = 'PUBLISHED';
+    page.isPublished = true;
+    page.isCurrentVersion = true;
+
+    await page.save();
+
+    return res.status(200).json({
+      message: 'SEO page published successfully',
+      data: page,
+    });
+  } catch (error) {
+    console.error('Error publishing SEO page:', error);
+    return res.status(500).json({ error: 'Failed to publish SEO page' });
+  }
+});
+
+// POST - Unpublish SEO page
+router.post('/seo-pages/:id/unpublish', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const page = await SeoPage.findById(id);
+    if (!page) {
+      return res.status(404).json({ error: 'SEO page not found' });
+    }
+
+    page.isPublished = false;
+    page.status = 'APPROVED';
+
+    await page.save();
+
+    return res.status(200).json({
+      message: 'SEO page unpublished successfully',
+      data: page,
+    });
+  } catch (error) {
+    console.error('Error unpublishing SEO page:', error);
+    return res.status(500).json({ error: 'Failed to unpublish SEO page' });
+  }
+});
+
+// POST - Unapprove SEO page (reset to DRAFT so writers can edit)
+router.post('/seo-pages/:id/unapprove', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const page = await SeoPage.findById(id);
+    if (!page) {
+      return res.status(404).json({ error: 'SEO page not found' });
+    }
+
+    page.isPublished = false;
+    page.status = 'DRAFT';
+
+    await page.save();
+
+    return res.status(200).json({
+      message: 'SEO page unapproved successfully',
+      data: page,
+    });
+  } catch (error) {
+    console.error('Error unapproving SEO page:', error);
+    return res.status(500).json({ error: 'Failed to unapprove SEO page' });
   }
 });
 
