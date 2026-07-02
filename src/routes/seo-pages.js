@@ -370,7 +370,7 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_acces
     }
 
     // Version control: if published, create new draft version
-    if (existing.status === 'PUBLISHED' && req.user.role === 'writer') {
+    if (existing.status === 'PUBLISHED') {
       const existingDraft = await SeoPage.findOne({
         originalPageId: existing._id,
         status: { $in: ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED'] },
