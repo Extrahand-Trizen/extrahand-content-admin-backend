@@ -4,9 +4,6 @@ function generateSlug(categorySlug, citySlug, areaSlug) {
 }
 
 function generateCanonicalUrl(pageType, citySlug, areaSlug, slug) {
-  if (pageType === 'area') {
-    return `https://extrahand.in/locations/${citySlug}/${areaSlug}/${slug}`;
-  }
   return `https://extrahand.in/${slug}`;
 }
 
@@ -35,7 +32,7 @@ function generateBreadcrumbSchema(pageType, cityName, citySlug, areaName, areaSl
         { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://extrahand.in/' },
         { '@type': 'ListItem', position: 2, name: cityName, item: `https://extrahand.in/locations/${citySlug}` },
         { '@type': 'ListItem', position: 3, name: areaName, item: `https://extrahand.in/locations/${citySlug}/${areaSlug}` },
-        { '@type': 'ListItem', position: 4, name: `${categoryName} in ${areaName}`, item: `https://extrahand.in/locations/${citySlug}/${areaSlug}/${slug}` },
+        { '@type': 'ListItem', position: 4, name: `${categoryName} in ${areaName}`, item: `https://extrahand.in/${slug}` },
       ],
     };
   }

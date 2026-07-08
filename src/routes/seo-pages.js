@@ -108,13 +108,14 @@ async function findAreaByIdOrSlug(value, cityDoc) {
 // GET - List SEO pages (authenticated, with filters and pagination)
 router.get('/', authenticate, async (req, res) => {
   try {
-    const { pageType, cityId, status, categorySlug, search, page, limit } = req.query;
+    const { pageType, cityId, status, categorySlug, search, page, limit, slug } = req.query;
     const filter = {};
     if (req.user && req.user.role === 'writer') {
       filter.writtenBy = req.user._id;
     }
     if (pageType) filter.pageType = pageType;
     if (cityId) filter.cityId = cityId;
+    if (slug) filter.slug = slug;
     if (status) {
       if (status.includes(',')) {
         filter.status = { $in: status.split(',') };
