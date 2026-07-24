@@ -39,10 +39,7 @@ router.get('/', optionalAuth, async (req, res) => {
       }
 
       // Public: published category only
-      const item = await TaskCategory.findOne({
-        slug,
-        $or: [{ isPublished: true }, { status: 'PUBLISHED' }, { status: 'APPROVED' }],
-      })
+      const item = await TaskCategory.findOne({ slug, isPublished: true })
         .populate('createdBy', 'name email');
 
       if (item) {
@@ -50,10 +47,7 @@ router.get('/', optionalAuth, async (req, res) => {
       }
 
       // Public: published subcategory only
-      const subcategory = await TaskSubcategory.findOne({
-        slug,
-        $or: [{ isPublished: true }, { status: 'PUBLISHED' }, { status: 'APPROVED' }],
-      })
+      const subcategory = await TaskSubcategory.findOne({ slug, isPublished: true })
         .populate('createdBy', 'name email');
 
       if (subcategory) {
@@ -87,8 +81,7 @@ router.get('/', optionalAuth, async (req, res) => {
     } else if (includeUnpublished) {
       filter = {};
     } else {
-      // Public users see only published categories
-      filter = { $or: [{ isPublished: true }, { status: 'PUBLISHED' }, { status: 'APPROVED' }] };
+      filter = { isPublished: true };
     }
     
     // Optional author filter for content_access_manager
@@ -99,7 +92,7 @@ router.get('/', optionalAuth, async (req, res) => {
     
     
     // Lean list: only fields needed for list view (avoids sending hero, staticTasks, earnings, etc.)
-    const listFields = 'name slug status isPublished categoryType subcategory subcategorySlug heroImage heroTitle heroDescription createdBy createdAt updatedAt';
+    const listFields = 'name slug status isPublished subcategory subcategorySlug heroImage heroTitle heroDescription createdBy createdAt updatedAt';
     const categories = await TaskCategory.find(filter)
       .select(listFields)
       .populate('createdBy', 'name email')
@@ -126,7 +119,7 @@ router.get('/', optionalAuth, async (req, res) => {
         // No additional filter
       } else {
         // Public users by default see only published
-        subcategoryFilter.$or = [{ isPublished: true }, { status: 'PUBLISHED' }, { status: 'APPROVED' }];
+        subcategoryFilter.isPublished = true;
       }
       
       allSubcategories = await TaskSubcategory.find(subcategoryFilter)

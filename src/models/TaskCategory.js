@@ -704,7 +704,7 @@ const TaskCategorySchema = new mongoose.Schema(
         trim: true,
       },
     ],
-    relatedLocations: [
+    relatedLocations:  [
       {
         type: String,
         trim: true,

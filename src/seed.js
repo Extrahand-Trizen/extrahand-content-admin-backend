@@ -2,8 +2,6 @@ require('dotenv').config();
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 const User = require('./models/User');
-const City = require('./models/City');
-const Area = require('./models/Area');
 
 const MONGODB_URI = process.env.MONGODB_URI;
 const SALT_ROUNDS = 12;
@@ -58,63 +56,6 @@ async function seedDatabase() {
 
       console.log(`✅ Created user: ${user.email} (${user.role})`);
       console.log(`   Password: ${userData.password}`);
-    }
-
-    // Seed cities
-    console.log('\nSeeding cities...\n');
-    const cityData = [
-      { name: 'Hyderabad', slug: 'hyderabad' },
-      { name: 'Bangalore', slug: 'bangalore' },
-      { name: 'Mumbai', slug: 'mumbai' },
-      { name: 'Delhi', slug: 'delhi' },
-      { name: 'Chennai', slug: 'chennai' },
-      { name: 'Pune', slug: 'pune' },
-      { name: 'Kolkata', slug: 'kolkata' },
-      { name: 'Ahmedabad', slug: 'ahmedabad' },
-      { name: 'Surat', slug: 'surat' },
-      { name: 'Jaipur', slug: 'jaipur' },
-      { name: 'Noida', slug: 'noida' },
-      { name: 'Gurugram', slug: 'gurugram' },
-    ];
-    for (const cityDataItem of cityData) {
-      const existingCity = await City.findOne({ slug: cityDataItem.slug });
-      if (existingCity) {
-        console.log(`❌ City already exists: ${cityDataItem.name}`);
-        continue;
-      }
-      await City.create(cityDataItem);
-      console.log(`✅ Created city: ${cityDataItem.name}`);
-    }
-
-    const hyderabad = await City.findOne({ slug: 'hyderabad' });
-    if (hyderabad) {
-      const areaData = [
-        { name: 'Banjara Hills', slug: 'banjara-hills' },
-        { name: 'Kukatpally', slug: 'kukatpally' },
-        { name: 'Jubilee Hills', slug: 'jubilee-hills' },
-        { name: 'Madhapur', slug: 'madhapur' },
-        { name: 'Gachibowli', slug: 'gachibowli' },
-        { name: 'Secunderabad', slug: 'secunderabad' },
-        { name: 'Ameerpet', slug: 'ameerpet' },
-        { name: 'Himayatnagar', slug: 'himayatnagar' },
-        { name: 'SR Nagar', slug: 'sr-nagar' },
-        { name: 'KPHB', slug: 'kphb' },
-        { name: 'LB Nagar', slug: 'lb-nagar' },
-        { name: 'Dilsukhnagar', slug: 'dilsukhnagar' },
-        { name: 'Mehdipatnam', slug: 'mehdipatnam' },
-        { name: 'Tolichowki', slug: 'tolichowki' },
-        { name: 'Miyapur', slug: 'miyapur' },
-      ];
-      console.log('\nSeeding areas for Hyderabad...\n');
-      for (const areaDataItem of areaData) {
-        const existingArea = await Area.findOne({ slug: areaDataItem.slug });
-        if (existingArea) {
-          console.log(`❌ Area already exists: ${areaDataItem.name}`);
-          continue;
-        }
-        await Area.create({ ...areaDataItem, cityId: hyderabad._id });
-        console.log(`✅ Created area: ${areaDataItem.name}`);
-      }
     }
 
     console.log('\n=================================');

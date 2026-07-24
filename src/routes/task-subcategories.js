@@ -59,12 +59,8 @@ router.get("/", optionalAuth, async (req, res) => {
         filter.categorySlug = categorySlug;
       }
       if (!canPreview) {
-        // Public website can show approved content in addition to fully published items.
-        filter.$or = [
-          { isPublished: true },
-          { status: 'PUBLISHED' },
-          { status: 'APPROVED' },
-        ];
+        // Only return published subcategory (unpublished must not be visible on main website)
+        filter.isPublished = true;
       }
 
       const subcategory = await TaskSubcategory.findOne(filter).populate(
@@ -91,13 +87,7 @@ router.get("/", optionalAuth, async (req, res) => {
         },
       };
     } else {
-      filter = {
-        $or: [
-          { isPublished: true },
-          { status: 'PUBLISHED' },
-          { status: 'APPROVED' },
-        ],
-      };
+      filter = { isPublished: true };
     }
     
     // Optional author filter for content_access_manager
@@ -126,14 +116,14 @@ router.get("/", optionalAuth, async (req, res) => {
 
       // Backward-compatible fallback: derive a single subcategory from legacy fields on TaskCategory
       const parentCategory = await TaskCategory.findOne({ slug: categorySlug })
-        .select("subcategory subcategorySlug isPublished status")
+        .select("subcategory subcategorySlug isPublished")
         .lean();
 
       const shouldExposeLegacy =
         parentCategory &&
         parentCategory.subcategory &&
         parentCategory.subcategorySlug &&
-        (!filter.$or || parentCategory.isPublished === true || ["PUBLISHED", "APPROVED"].includes(parentCategory.status));
+        (filter.isPublished ? parentCategory.isPublished === true : true);
 
       if (shouldExposeLegacy) {
         return res.status(200).json([
