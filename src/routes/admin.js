@@ -1611,46 +1611,12 @@ router.get('/subcategories/all', authenticate, allowRoles('reviewer', 'content_a
         details: process.env.NODE_ENV === 'development' ? fallbackErr.message : undefined,
       });
     }
-<<<<<<< HEAD
   }
 
   try {
-    const categorySlugSet = new Set(subcategories.map((item) => item.categorySlug).filter(Boolean));
-    let categoryTypeMap = new Map();
-    if (categorySlugSet.size > 0) {
-      const slugs = Array.from(categorySlugSet);
-      const parentCategoriesBySlug = await TaskCategory.find({ slug: { $in: slugs } })
-        .select('slug categoryType name')
-        .lean();
-      categoryTypeMap = new Map(parentCategoriesBySlug.map((item) => [item.slug, item.categoryType || inferCategoryTypeFromName(item.name)]));
-=======
-    // Reviewer and content_access_manager both see all statuses (including DRAFT)
-
-    const pageNum = parseInt(page) || 1;
-    const rawLimit = parseInt(limit) || 50;
-    const limitNum = Math.min(2000, Math.max(1, rawLimit));
-
-    const subcategoryListFields = 'name slug categorySlug status isPublished originalSubcategoryId createdBy reviewedBy reviewedAt publishedBy createdAt updatedAt';
-    let subcategories;
-    try {
-      subcategories = await TaskSubcategory.find(filter)
-        .select(subcategoryListFields)
-        .populate('createdBy', 'name email role')
-        .populate('reviewedBy', 'name email')
-        .populate('publishedBy', 'name email')
-        .sort({ createdAt: -1 })
-        .limit(2000)
-        .lean();
-    } catch (queryErr) {
-      console.warn('Subcategories query with populate failed, trying without populate:', queryErr.message);
-      subcategories = await TaskSubcategory.find(filter)
-        .select(subcategoryListFields)
-        .sort({ createdAt: -1 })
-        .limit(2000)
-        .lean();
-    }
-
-    const categorySlugSet = new Set(subcategories.map((item) => item?.categorySlug).filter((s) => s && typeof s === 'string'));
+    const categorySlugSet = new Set(
+      subcategories.map((item) => item?.categorySlug).filter((s) => s && typeof s === 'string'),
+    );
     let categoryTypeMap = new Map();
     if (categorySlugSet.size > 0) {
       const slugs = Array.from(categorySlugSet).slice(0, 500).filter((s) => s && typeof s === 'string');
@@ -1661,14 +1627,16 @@ router.get('/subcategories/all', authenticate, allowRoles('reviewer', 'content_a
             .lean();
           parentCategoriesBySlug.forEach((item) => {
             if (item?.slug) {
-              categoryTypeMap.set(item.slug, item.categoryType || inferCategoryTypeFromName(item.name || ''));
+              categoryTypeMap.set(
+                item.slug,
+                item.categoryType || inferCategoryTypeFromName(item.name || ''),
+              );
             }
           });
         } catch (lookupErr) {
           console.warn('Parent category lookup failed:', lookupErr.message);
         }
       }
->>>>>>> 82c8ce3 (changes)
     }
 
     const subcategoriesWithType = subcategories.map((item) => ({
@@ -1679,13 +1647,8 @@ router.get('/subcategories/all', authenticate, allowRoles('reviewer', 'content_a
 
     let data = subcategoriesWithType;
     if (categoryTypeFilter && (categoryTypeFilter === 'tasker' || categoryTypeFilter === 'poster')) {
-<<<<<<< HEAD
       data = subcategoriesWithType.filter((item) =>
-        matchesCategoryTypeFilter(item.categoryType, categoryTypeFilter)
-=======
-      filtered = subcategoriesWithType.filter((item) =>
-        matchesCategoryTypeFilter(item?.categoryType, categoryTypeFilter)
->>>>>>> 82c8ce3 (changes)
+        matchesCategoryTypeFilter(item?.categoryType, categoryTypeFilter),
       );
     }
 
@@ -1699,18 +1662,10 @@ router.get('/subcategories/all', authenticate, allowRoles('reviewer', 'content_a
       },
     });
   } catch (error) {
-<<<<<<< HEAD
     console.error('Error processing subcategories:', error);
     return res.status(500).json({
       error: 'Failed to fetch subcategories',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined,
-=======
-    console.error('Error fetching subcategories:', error);
-    return res.status(500).json({
-      error: 'Failed to fetch subcategories',
-      message: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
->>>>>>> 82c8ce3 (changes)
     });
   }
 });
