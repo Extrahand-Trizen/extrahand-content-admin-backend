@@ -18,17 +18,26 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
+  K8S_NAMESPACE: extrahand
+  K8S_DEPLOYMENT: content-admin-backend
+  K8S_CONTAINER: content-admin-backend
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    outputs:
+      image_name: ${{ steps.downcase.outputs.image_name }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Downcase image name
-        run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+        id: downcase
+        run: |
+          name="${GITHUB_REPOSITORY,,}"
+          echo "IMAGE_NAME=${name}" >> "$GITHUB_ENV"
+          echo "image_name=${name}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -80,3 +89,43 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # After image is on GHCR, roll the k3s Deployment so pods pull the new image.
+  # Uses SSH into the k3s node (safer than exposing the API server to the internet).
+  #
+  # Required repo Secrets (Settings → Secrets and variables → Actions):
+  #   K3S_SSH_HOST — e.g. 72.62.192.249
+  #   K3S_SSH_USER — e.g. root
+  #   K3S_SSH_KEY  — private key that can SSH to that host
+  deploy-k3s:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    # Only promote Ajay/main (and manual runs) to the live cluster — not every feature branch.
+    if: >
+      github.ref == 'refs/heads/Ajay' ||
+      github.ref == 'refs/heads/main' ||
+      github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Deploy image to k3s
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.K3S_SSH_HOST }}
+          username: ${{ secrets.K3S_SSH_USER }}
+          key: ${{ secrets.K3S_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+
+            IMAGE="${{ env.REGISTRY }}/${{ needs.build-and-push.outputs.image_name }}:sha-${{ github.sha }}"
+            echo "Rolling out ${IMAGE}"
+
+            kubectl set image "deployment/${{ env.K8S_DEPLOYMENT }}" \
+              "${{ env.K8S_CONTAINER }}=${IMAGE}" \
+              -n "${{ env.K8S_NAMESPACE }}"
+
+            kubectl rollout status "deployment/${{ env.K8S_DEPLOYMENT }}" \
+              -n "${{ env.K8S_NAMESPACE }}" \
+              --timeout=180s
+
+            kubectl get pods -n "${{ env.K8S_NAMESPACE }}" -l "app=${{ env.K8S_DEPLOYMENT }}" -o wide
