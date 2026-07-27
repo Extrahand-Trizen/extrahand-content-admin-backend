@@ -115,7 +115,7 @@ jobs:
           script_stop: true
           script: |
             set -euo pipefail
-            export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+            export KUBECONFIG="$HOME/.kube/config"
 
             IMAGE="${{ env.REGISTRY }}/${{ needs.build-and-push.outputs.image_name }}:sha-${{ github.sha }}"
             echo "Rolling out ${IMAGE}"
