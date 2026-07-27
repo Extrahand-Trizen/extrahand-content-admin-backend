@@ -137,13 +137,43 @@ router.get('/', authenticate, async (req, res) => {
     const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 20));
     const skip = (pageNum - 1) * limitNum;
 
+    // Table lists only need summary fields. Slug lookups (seo-preview) need the full doc.
+    const SEO_LIST_FIELDS = [
+      'pageType',
+      'categoryName',
+      'categorySlug',
+      'cityId',
+      'cityName',
+      'citySlug',
+      'areaId',
+      'areaName',
+      'areaSlug',
+      'slug',
+      'status',
+      'isPublished',
+      'isCurrentVersion',
+      'originalPageId',
+      'metaTitle',
+      'metaDescription',
+      'writtenBy',
+      'rejectedReason',
+      'createdAt',
+      'updatedAt',
+    ].join(' ');
+
+    let listQuery = SeoPage.find(filter)
+      .populate('writtenBy', 'name email')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limitNum)
+      .lean();
+
+    if (!slug) {
+      listQuery = listQuery.select(SEO_LIST_FIELDS);
+    }
+
     const [pages, total] = await Promise.all([
-      SeoPage.find(filter)
-        .populate('writtenBy', 'name email')
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limitNum)
-        .lean(),
+      listQuery,
       SeoPage.countDocuments(filter),
     ]);
 

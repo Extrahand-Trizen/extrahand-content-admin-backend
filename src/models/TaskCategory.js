@@ -933,6 +933,9 @@ const TaskCategorySchema = new mongoose.Schema(
 // Create indexes for faster queries
 TaskCategorySchema.index({ slug: 1 }, { unique: true, partialFilterExpression: { isPublished: true } });
 TaskCategorySchema.index({ isPublished: 1 });
+TaskCategorySchema.index({ status: 1, createdAt: -1 });
+TaskCategorySchema.index({ createdBy: 1, status: 1 });
+TaskCategorySchema.index({ createdAt: -1 });
 
 module.exports = mongoose.model('TaskCategory', TaskCategorySchema);
 

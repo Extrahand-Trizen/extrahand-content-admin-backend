@@ -99,18 +99,38 @@ router.get("/", optionalAuth, async (req, res) => {
     // Lean list: only fields needed for list view (avoids sending hero, staticTasks, earnings, etc.)
     const listFields = "name slug categorySlug status isPublished createdBy createdAt updatedAt";
 
+    const pageNum = parseInt(String(req.query.page || ""), 10);
+    const usePagination = Number.isFinite(pageNum) && pageNum >= 1;
+    const limitNum = usePagination
+      ? Math.min(100, Math.max(1, parseInt(String(req.query.limit || "50"), 10) || 50))
+      : 2000;
+    const skip = usePagination ? (pageNum - 1) * limitNum : 0;
+
     if (categorySlug) {
-      const subcategories = await TaskSubcategory.find({
-        categorySlug,
-        ...filter,
-      })
-        .select(listFields)
-        .populate("createdBy", "name email")
-        .sort({ createdAt: -1 })
-        .limit(2000)
-        .lean();
+      const subFilter = { categorySlug, ...filter };
+      const [subcategories, total] = await Promise.all([
+        TaskSubcategory.find(subFilter)
+          .select(listFields)
+          .populate("createdBy", "name email")
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limitNum)
+          .lean(),
+        usePagination ? TaskSubcategory.countDocuments(subFilter) : Promise.resolve(null),
+      ]);
 
       if (subcategories.length > 0) {
+        if (usePagination) {
+          return res.status(200).json({
+            data: subcategories,
+            pagination: {
+              page: pageNum,
+              limit: limitNum,
+              total: total || 0,
+              pages: Math.ceil((total || 0) / limitNum) || 1,
+            },
+          });
+        }
         return res.status(200).json(subcategories);
       }
 
@@ -126,7 +146,7 @@ router.get("/", optionalAuth, async (req, res) => {
         (filter.isPublished ? parentCategory.isPublished === true : true);
 
       if (shouldExposeLegacy) {
-        return res.status(200).json([
+        const legacy = [
           {
             name: parentCategory.subcategory,
             slug: parentCategory.subcategorySlug,
@@ -134,18 +154,47 @@ router.get("/", optionalAuth, async (req, res) => {
             status: "PUBLISHED",
             isPublished: true,
           },
-        ]);
+        ];
+        if (usePagination) {
+          return res.status(200).json({
+            data: legacy,
+            pagination: { page: 1, limit: limitNum, total: 1, pages: 1 },
+          });
+        }
+        return res.status(200).json(legacy);
       }
 
+      if (usePagination) {
+        return res.status(200).json({
+          data: [],
+          pagination: { page: pageNum, limit: limitNum, total: 0, pages: 1 },
+        });
+      }
       return res.status(200).json([]);
     }
 
-    const subcategories = await TaskSubcategory.find(filter)
-      .select(listFields)
-      .populate("createdBy", "name email")
-      .sort({ createdAt: -1 })
-      .limit(2000)
-      .lean();
+    const [subcategories, total] = await Promise.all([
+      TaskSubcategory.find(filter)
+        .select(listFields)
+        .populate("createdBy", "name email")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limitNum)
+        .lean(),
+      usePagination ? TaskSubcategory.countDocuments(filter) : Promise.resolve(null),
+    ]);
+
+    if (usePagination) {
+      return res.status(200).json({
+        data: subcategories,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: total || 0,
+          pages: Math.ceil((total || 0) / limitNum) || 1,
+        },
+      });
+    }
     return res.status(200).json(subcategories);
   } catch (error) {
     if (process.env.NODE_ENV === "development") {

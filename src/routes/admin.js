@@ -5,10 +5,13 @@ const crypto = require('crypto');
 const Article = require('../models/Article');
 const TaskCategory = require('../models/TaskCategory');
 const TaskSubcategory = require('../models/TaskSubcategory');
+const SeoPage = require('../models/SeoPage');
 const User = require('../models/User');
 const authenticate = require('../middleware/auth');
+const { invalidateAuthUserCache } = require('../middleware/auth');
 const allowRoles = require('../middleware/roles');
 const EmailServiceClient = require('../utils/EmailServiceClient');
+const { countByStatus, countUsersByRole, statusCount } = require('../utils/dashboardStats');
 
 const SALT_ROUNDS = parseInt(process.env.BCRYPT_SALT_ROUNDS) || 12;
 
@@ -90,7 +93,7 @@ router.get('/articles/pending', authenticate, allowRoles('reviewer', 'writer', '
 // Writers should use /api/articles/my-articles instead
 router.get('/articles/all', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
-    const { status, limit, page } = req.query;
+    const { status, limit, page, search, category } = req.query;
     let filter = {};
 
     // Reviewers and content_access_managers see all articles (no filter by createdBy)
@@ -101,9 +104,22 @@ router.get('/articles/all', authenticate, allowRoles('reviewer', 'content_access
       filter.status = { $in: ['PENDING_APPROVAL', 'APPROVED', 'PUBLISHED', 'REJECTED'] };
     }
 
-    // Pagination support - default to 50 items per page
-    const pageNum = parseInt(page) || 1;
-    const limitNum = parseInt(limit) || 50;
+    if (category) {
+      filter.category = category;
+    }
+    if (search) {
+      const term = String(search).trim();
+      if (term) {
+        filter.$or = [
+          { title: { $regex: term, $options: 'i' } },
+          { description: { $regex: term, $options: 'i' } },
+        ];
+      }
+    }
+
+    // Pagination support - default to 50 items per page, hard cap 100
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 50));
     const skip = (pageNum - 1) * limitNum;
 
     const articleListFields = 'title description category subcategory subSubcategory status isPublished author createdBy reviewedBy reviewedAt publishedBy publishedAt createdAt updatedAt';
@@ -285,34 +301,34 @@ router.get('/users', authenticate, allowRoles('content_access_manager'), async (
   try {
     const { page = '1', limit = '20' } = req.query;
 
-    const pageNum = parseInt(page, 10) || 1;
-    const limitNum = parseInt(limit, 10) || 20;
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
     const skip = (pageNum - 1) * limitNum;
 
-    // Get total count
-    const total = await User.countDocuments({});
-
-    // Get paginated users
-    const users = await User.find({})
-      .select('-passwordHash -resetPasswordToken -resetPasswordExpires -emailVerificationToken -emailVerificationExpires -loginAttempts -lockUntil')
-      .populate({
-        path: 'suspendedBy',
-        select: 'name email',
-        options: { strictPopulate: false }
-      })
-      .populate({
-        path: 'bannedBy',
-        select: 'name email',
-        options: { strictPopulate: false }
-      })
-      .populate({
-        path: 'approvedBy',
-        select: 'name email',
-        options: { strictPopulate: false }
-      })
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limitNum);
+    const [total, users] = await Promise.all([
+      User.countDocuments({}),
+      User.find({})
+        .select('-passwordHash -resetPasswordToken -resetPasswordExpires -emailVerificationToken -emailVerificationExpires -loginAttempts -lockUntil')
+        .populate({
+          path: 'suspendedBy',
+          select: 'name email',
+          options: { strictPopulate: false }
+        })
+        .populate({
+          path: 'bannedBy',
+          select: 'name email',
+          options: { strictPopulate: false }
+        })
+        .populate({
+          path: 'approvedBy',
+          select: 'name email',
+          options: { strictPopulate: false }
+        })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limitNum)
+        .lean(),
+    ]);
 
     const totalPages = Math.ceil(total / limitNum);
 
@@ -352,6 +368,7 @@ router.put('/users/:id/role', authenticate, allowRoles('content_access_manager')
 
     user.role = role;
     await user.save();
+    invalidateAuthUserCache(user._id);
 
     return res.status(200).json({
       message: 'User role updated successfully',
@@ -390,6 +407,7 @@ router.put('/users/:id/status', authenticate, allowRoles('content_access_manager
       user.approvedBy = req.user._id;
     }
     await user.save();
+    invalidateAuthUserCache(user._id);
 
     return res.status(200).json({
       message: 'User status updated successfully',
@@ -421,6 +439,8 @@ router.delete('/users/:id', authenticate, allowRoles('content_access_manager'), 
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
+
+    invalidateAuthUserCache(id);
 
     return res.status(200).json({ message: 'User deleted successfully' });
   } catch (error) {
@@ -575,6 +595,7 @@ router.post('/users/:id/suspend', authenticate, allowRoles('content_access_manag
     user.suspendedBy = req.user._id;
     user.suspendedReason = reason || 'No reason provided';
     await user.save();
+    invalidateAuthUserCache(user._id);
 
     // Send suspension email (fire-and-forget)
     const daysRemaining = Math.ceil((suspendedUntil.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
@@ -628,6 +649,7 @@ router.post('/users/:id/unsuspend', authenticate, allowRoles('content_access_man
     user.suspendedBy = null;
     user.suspendedReason = null;
     await user.save();
+    invalidateAuthUserCache(user._id);
 
     return res.status(200).json({
       message: 'User unsuspended successfully',
@@ -672,6 +694,7 @@ router.post('/users/:id/ban', authenticate, allowRoles('content_access_manager')
     user.bannedReason = reason || 'No reason provided';
     user.status = 'REJECTED'; // Set status to REJECTED for banned users
     await user.save();
+    invalidateAuthUserCache(user._id);
 
     // Send ban email (fire-and-forget)
     EmailServiceClient.sendBanEmail(
@@ -724,6 +747,7 @@ router.post('/users/:id/unban', authenticate, allowRoles('content_access_manager
     user.bannedReason = null;
     user.status = 'APPROVED';
     await user.save();
+    invalidateAuthUserCache(user._id);
 
     return res.status(200).json({
       message: 'User unbanned successfully',
@@ -750,91 +774,58 @@ router.get('/dashboard/stats', authenticate, allowRoles('reviewer', 'writer', 'c
   try {
     let articleFilter = {};
     let categoryFilter = {};
+    let seoFilter = {};
 
     // Writers only see their own content stats
     if (req.user.role === 'writer') {
       articleFilter.createdBy = req.user._id;
       categoryFilter.createdBy = req.user._id;
+      seoFilter.writtenBy = req.user._id;
     }
-    // Reviewers see all content stats 
 
-    const [
-      totalArticles,
-      pendingArticles,
-      approvedArticles,
-      publishedArticles,
-      rejectedArticles,
-      totalUsers,
-      ReviewerUsers,
-      writerUsers,
-      totalCategories,
-      pendingCategories,
-      approvedCategories,
-      publishedCategories,
-      rejectedCategories,
-      totalSubcategories,
-      pendingSubcategories,
-      approvedSubcategories,
-      publishedSubcategories,
-      rejectedSubcategories,
-      pendingSeoPages,
-      approvedSeoPages,
-      publishedSeoPages,
-    ] = await Promise.all([
-      Article.countDocuments(articleFilter),
-      Article.countDocuments({ ...articleFilter, status: 'PENDING_APPROVAL' }),
-      Article.countDocuments({ ...articleFilter, status: 'APPROVED' }),
-      Article.countDocuments({ ...articleFilter, status: 'PUBLISHED' }),
-      Article.countDocuments({ ...articleFilter, status: 'REJECTED' }),
-      (req.user.role === 'reviewer' || req.user.role === 'content_access_manager') ? User.countDocuments() : 0,
-      (req.user.role === 'reviewer' || req.user.role === 'content_access_manager') ? User.countDocuments({ role: 'reviewer' }) : 0,
-      (req.user.role === 'reviewer' || req.user.role === 'content_access_manager') ? User.countDocuments({ role: 'writer' }) : 0,
-      TaskCategory.countDocuments(categoryFilter),
-      TaskCategory.countDocuments({ ...categoryFilter, status: 'PENDING_APPROVAL' }),
-      TaskCategory.countDocuments({ ...categoryFilter, status: 'APPROVED' }),
-      TaskCategory.countDocuments({ ...categoryFilter, status: 'PUBLISHED' }),
-      TaskCategory.countDocuments({ ...categoryFilter, status: 'REJECTED' }),
-      TaskSubcategory.countDocuments(categoryFilter), // Reuse categoryFilter as it's the same logic
-      TaskSubcategory.countDocuments({ ...categoryFilter, status: 'PENDING_APPROVAL' }),
-      TaskSubcategory.countDocuments({ ...categoryFilter, status: 'APPROVED' }),
-      TaskSubcategory.countDocuments({ ...categoryFilter, status: 'PUBLISHED' }),
-      TaskSubcategory.countDocuments({ ...categoryFilter, status: 'REJECTED' }),
-      SeoPage.countDocuments({ status: 'PENDING_APPROVAL' }),
-      SeoPage.countDocuments({ status: 'APPROVED' }),
-      SeoPage.countDocuments({ status: 'PUBLISHED' }),
-    ]);
+    const canSeeUsers =
+      req.user.role === 'reviewer' || req.user.role === 'content_access_manager';
+
+    const [articleStats, categoryStats, subcategoryStats, seoStats, userStats] =
+      await Promise.all([
+        countByStatus(Article, articleFilter),
+        countByStatus(TaskCategory, categoryFilter),
+        countByStatus(TaskSubcategory, categoryFilter),
+        countByStatus(SeoPage, seoFilter),
+        canSeeUsers ? countUsersByRole(User) : Promise.resolve({ byRole: {}, total: 0 }),
+      ]);
 
     return res.status(200).json({
       articles: {
-        total: totalArticles,
-        pending: pendingArticles,
-        approved: approvedArticles,
-        published: publishedArticles,
-        rejected: rejectedArticles,
+        total: articleStats.total,
+        pending: statusCount(articleStats.byStatus, 'PENDING_APPROVAL'),
+        approved: statusCount(articleStats.byStatus, 'APPROVED'),
+        published: statusCount(articleStats.byStatus, 'PUBLISHED'),
+        rejected: statusCount(articleStats.byStatus, 'REJECTED'),
       },
       categories: {
-        total: totalCategories,
-        pending: pendingCategories,
-        approved: approvedCategories,
-        published: publishedCategories,
-        rejected: rejectedCategories,
+        total: categoryStats.total,
+        pending: statusCount(categoryStats.byStatus, 'PENDING_APPROVAL'),
+        approved: statusCount(categoryStats.byStatus, 'APPROVED'),
+        published: statusCount(categoryStats.byStatus, 'PUBLISHED'),
+        rejected: statusCount(categoryStats.byStatus, 'REJECTED'),
       },
       subcategories: {
-        total: totalSubcategories,
-        pending: pendingSubcategories,
-        approved: approvedSubcategories,
-        published: publishedSubcategories,
-        rejected: rejectedSubcategories,
+        total: subcategoryStats.total,
+        pending: statusCount(subcategoryStats.byStatus, 'PENDING_APPROVAL'),
+        approved: statusCount(subcategoryStats.byStatus, 'APPROVED'),
+        published: statusCount(subcategoryStats.byStatus, 'PUBLISHED'),
+        rejected: statusCount(subcategoryStats.byStatus, 'REJECTED'),
       },
       seoPages: {
-        pending: pendingSeoPages,
-        approved: approvedSeoPages,
-        published: publishedSeoPages,
+        pending: statusCount(seoStats.byStatus, 'PENDING_APPROVAL'),
+        approved: statusCount(seoStats.byStatus, 'APPROVED'),
+        published: statusCount(seoStats.byStatus, 'PUBLISHED'),
       },
       users: {
-        total: totalUsers,
-        Reviewers: ReviewerUsers,
-        writers: writerUsers,
+        total: userStats.total,
+        Reviewers: userStats.byRole.reviewer || 0,
+        writers: userStats.byRole.writer || 0,
       },
     });
   } catch (error) {
@@ -846,16 +837,22 @@ router.get('/dashboard/stats', authenticate, allowRoles('reviewer', 'writer', 'c
 // GET - Recent activity (Reviewer and content_access_manager)
 router.get('/dashboard/activity', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
-    const recentArticles = await Article.find()
-      .populate('createdBy', 'name email')
-      .populate('reviewedBy', 'name email')
-      .sort({ updatedAt: -1 })
-      .limit(10);
-
-    const recentUsers = await User.find()
-      .select('-passwordHash')
-      .sort({ createdAt: -1 })
-      .limit(10);
+    const activityArticleFields =
+      'title description category status isPublished author createdBy reviewedBy createdAt updatedAt';
+    const [recentArticles, recentUsers] = await Promise.all([
+      Article.find()
+        .select(activityArticleFields)
+        .populate('createdBy', 'name email')
+        .populate('reviewedBy', 'name email')
+        .sort({ updatedAt: -1 })
+        .limit(10)
+        .lean(),
+      User.find()
+        .select('name email role status banned createdAt')
+        .sort({ createdAt: -1 })
+        .limit(10)
+        .lean(),
+    ]);
 
     return res.status(200).json({
       recentArticles,
@@ -908,95 +905,104 @@ async function analyticsHandler(req, res) {
       _id: 0,
     };
 
-    // Articles by writer
-    const articlesByWriterAgg = await Article.aggregate([
-      { $match: { createdBy: { $exists: true, $ne: null } } },
-      { $group: { _id: '$createdBy', ...statusGroup('$createdBy'), totalArticles: { $sum: 1 } } },
-      { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
-      { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
-      { $project: { ...writerProject, totalArticles: '$totalArticles' } },
-      { $sort: { totalArticles: -1 } },
-    ]);
-
-    // Articles by reviewer
-    const articlesByReviewerAgg = await Article.aggregate([
-      { $match: { reviewedBy: { $exists: true, $ne: null } } },
-      {
-        $group: {
-          _id: '$reviewedBy',
-          totalReviewed: { $sum: 1 },
-          totalApproved: { $sum: { $cond: [{ $in: ['$status', ['APPROVED', 'PUBLISHED']] }, 1, 0] } },
-          totalRejected: { $sum: { $cond: [{ $eq: ['$status', 'REJECTED'] }, 1, 0] } },
-        }
-      },
-      { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
-      { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
-      { $project: reviewerProject },
-      { $sort: { totalReviewed: -1 } },
-    ]);
-
-    // Categories by writer (include missing createdBy as Unknown)
+    // Include missing createdBy as Unknown in writer groupings
     const categoryWriterGroupId = { $ifNull: ['$createdBy', null] };
-    const categoriesByWriterAgg = await TaskCategory.aggregate([
-      { $group: { _id: categoryWriterGroupId, ...statusGroup(categoryWriterGroupId), totalCategories: { $sum: 1 } } },
-      { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
-      { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
-      { $project: { ...writerProject, totalCategories: '$totalCategories' } },
-      { $sort: { totalCategories: -1 } },
-    ]);
-
-    // Categories by reviewer
-    const categoriesByReviewerAgg = await TaskCategory.aggregate([
-      { $match: { reviewedBy: { $exists: true, $ne: null } } },
-      {
-        $group: {
-          _id: '$reviewedBy',
-          totalReviewed: { $sum: 1 },
-          totalApproved: { $sum: { $cond: [{ $in: ['$status', ['APPROVED', 'PUBLISHED']] }, 1, 0] } },
-          totalRejected: { $sum: { $cond: [{ $eq: ['$status', 'REJECTED'] }, 1, 0] } },
-        }
-      },
-      { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
-      { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
-      { $project: reviewerProject },
-      { $sort: { totalReviewed: -1 } },
-    ]);
-
-    // Subcategories by writer (include missing createdBy as Unknown)
     const subcategoryWriterGroupId = { $ifNull: ['$createdBy', null] };
-    const subcategoriesByWriterAgg = await TaskSubcategory.aggregate([
-      { $match: { categorySlug: { $exists: true, $ne: null, $ne: '' } } },
-      { $group: { _id: subcategoryWriterGroupId, ...statusGroup(subcategoryWriterGroupId), totalSubcategories: { $sum: 1 } } },
-      { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
-      { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
-      { $project: { ...writerProject, totalSubcategories: '$totalSubcategories' } },
-      { $sort: { totalSubcategories: -1 } },
-    ]);
 
-    // Subcategories by reviewer
-    const subcategoriesByReviewerAgg = await TaskSubcategory.aggregate([
-      {
-        $match: {
-          reviewedBy: { $exists: true, $ne: null },
-          categorySlug: { $exists: true, $ne: null, $ne: '' }
-        }
-      },
-      {
-        $group: {
-          _id: '$reviewedBy',
-          totalReviewed: { $sum: 1 },
-          totalApproved: { $sum: { $cond: [{ $in: ['$status', ['APPROVED', 'PUBLISHED']] }, 1, 0] } },
-          totalRejected: { $sum: { $cond: [{ $eq: ['$status', 'REJECTED'] }, 1, 0] } },
-        }
-      },
-      { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
-      { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
-      { $project: reviewerProject },
-      { $sort: { totalReviewed: -1 } },
-    ]);
-
-    // Status distributions
-    const [articleStatusDistribution, categoryStatusDistribution, subcategoryStatusDistribution] = await Promise.all([
+    // Articles / categories / subcategories by writer & reviewer — run in parallel
+    const [
+      articlesByWriterAgg,
+      articlesByReviewerAgg,
+      categoriesByWriterAgg,
+      categoriesByReviewerAgg,
+      subcategoriesByWriterAgg,
+      subcategoriesByReviewerAgg,
+      articleStatusDistribution,
+      categoryStatusDistribution,
+      subcategoryStatusDistribution,
+      totalArticles,
+      totalWithWriter,
+      totalReviewed,
+      totalWriters,
+      totalReviewers,
+      totalCategories,
+      totalSubcategories,
+      totalCategoriesReviewed,
+      totalSubcategoriesReviewed,
+    ] = await Promise.all([
+      Article.aggregate([
+        { $match: { createdBy: { $exists: true, $ne: null } } },
+        { $group: { _id: '$createdBy', ...statusGroup('$createdBy'), totalArticles: { $sum: 1 } } },
+        { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
+        { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+        { $project: { ...writerProject, totalArticles: '$totalArticles' } },
+        { $sort: { totalArticles: -1 } },
+      ]),
+      Article.aggregate([
+        { $match: { reviewedBy: { $exists: true, $ne: null } } },
+        {
+          $group: {
+            _id: '$reviewedBy',
+            totalReviewed: { $sum: 1 },
+            totalApproved: { $sum: { $cond: [{ $in: ['$status', ['APPROVED', 'PUBLISHED']] }, 1, 0] } },
+            totalRejected: { $sum: { $cond: [{ $eq: ['$status', 'REJECTED'] }, 1, 0] } },
+          }
+        },
+        { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
+        { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+        { $project: reviewerProject },
+        { $sort: { totalReviewed: -1 } },
+      ]),
+      TaskCategory.aggregate([
+        { $group: { _id: categoryWriterGroupId, ...statusGroup(categoryWriterGroupId), totalCategories: { $sum: 1 } } },
+        { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
+        { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+        { $project: { ...writerProject, totalCategories: '$totalCategories' } },
+        { $sort: { totalCategories: -1 } },
+      ]),
+      TaskCategory.aggregate([
+        { $match: { reviewedBy: { $exists: true, $ne: null } } },
+        {
+          $group: {
+            _id: '$reviewedBy',
+            totalReviewed: { $sum: 1 },
+            totalApproved: { $sum: { $cond: [{ $in: ['$status', ['APPROVED', 'PUBLISHED']] }, 1, 0] } },
+            totalRejected: { $sum: { $cond: [{ $eq: ['$status', 'REJECTED'] }, 1, 0] } },
+          }
+        },
+        { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
+        { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+        { $project: reviewerProject },
+        { $sort: { totalReviewed: -1 } },
+      ]),
+      TaskSubcategory.aggregate([
+        { $match: { categorySlug: { $exists: true, $ne: null, $ne: '' } } },
+        { $group: { _id: subcategoryWriterGroupId, ...statusGroup(subcategoryWriterGroupId), totalSubcategories: { $sum: 1 } } },
+        { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
+        { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+        { $project: { ...writerProject, totalSubcategories: '$totalSubcategories' } },
+        { $sort: { totalSubcategories: -1 } },
+      ]),
+      TaskSubcategory.aggregate([
+        {
+          $match: {
+            reviewedBy: { $exists: true, $ne: null },
+            categorySlug: { $exists: true, $ne: null, $ne: '' }
+          }
+        },
+        {
+          $group: {
+            _id: '$reviewedBy',
+            totalReviewed: { $sum: 1 },
+            totalApproved: { $sum: { $cond: [{ $in: ['$status', ['APPROVED', 'PUBLISHED']] }, 1, 0] } },
+            totalRejected: { $sum: { $cond: [{ $eq: ['$status', 'REJECTED'] }, 1, 0] } },
+          }
+        },
+        { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
+        { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+        { $project: reviewerProject },
+        { $sort: { totalReviewed: -1 } },
+      ]),
       Article.aggregate([
         { $group: { _id: '$status', count: { $sum: 1 } } },
         { $project: { status: '$_id', count: 1, _id: 0 } },
@@ -1010,19 +1016,6 @@ async function analyticsHandler(req, res) {
         { $group: { _id: '$status', count: { $sum: 1 } } },
         { $project: { status: '$_id', count: 1, _id: 0 } },
       ]),
-    ]);
-
-    const [
-      totalArticles,
-      totalWithWriter,
-      totalReviewed,
-      totalWriters,
-      totalReviewers,
-      totalCategories,
-      totalSubcategories,
-      totalCategoriesReviewed,
-      totalSubcategoriesReviewed,
-    ] = await Promise.all([
       Article.countDocuments(),
       Article.countDocuments({ createdBy: { $exists: true, $ne: null } }),
       Article.countDocuments({ reviewedBy: { $exists: true, $ne: null } }),
@@ -1894,7 +1887,6 @@ router.post('/subcategories/unapprove-bulk', authenticate, allowRoles('reviewer'
 // SEO PAGES APPROVAL SYSTEM (Reviewer and content_access_manager only)
 // ============================================
 
-const SeoPage = require('../models/SeoPage');
 const City = require('../models/City');
 const Area = require('../models/Area');
 const { generateSlug } = require('../utils/seoPageUtils');

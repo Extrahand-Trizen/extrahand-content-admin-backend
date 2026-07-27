@@ -6,4 +6,6 @@ const citySchema = new mongoose.Schema({
   isActive: { type: Boolean, default: true },
 }, { timestamps: true });
 
+citySchema.index({ isActive: 1, name: 1 });
+
 module.exports = mongoose.model('City', citySchema);

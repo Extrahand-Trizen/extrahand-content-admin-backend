@@ -86,19 +86,24 @@ router.get("/", optionalAuth, async (req, res) => {
     }
 
     // Pagination support
-    const pageNum = parseInt(page) || 1;
-    const limitNum = parseInt(limit) || 50;
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 50));
     const skip = (pageNum - 1) * limitNum;
 
-    // Fetch all articles with filter
-    const articles = await Article.find(filter)
-      .populate("createdBy", "name email")
-      .sort({ createdAt: -1 })
-      .limit(limitNum)
-      .skip(skip)
-      .select("-__v");
+    const articleListFields =
+      'title description category subcategory subSubcategory status isPublished author imageUrl createdBy reviewedBy publishedBy createdAt updatedAt views';
 
-    const total = await Article.countDocuments(filter);
+    // Fetch list without full HTML content
+    const [articles, total] = await Promise.all([
+      Article.find(filter)
+        .populate('createdBy', 'name email')
+        .sort({ createdAt: -1 })
+        .limit(limitNum)
+        .skip(skip)
+        .select(articleListFields)
+        .lean(),
+      Article.countDocuments(filter),
+    ]);
 
     return res.status(200).json({
       success: true,
@@ -107,7 +112,7 @@ router.get("/", optionalAuth, async (req, res) => {
         page: pageNum,
         limit: limitNum,
         total,
-        pages: Math.ceil(total / limitNum),
+        pages: Math.ceil(total / limitNum) || 1,
       },
     });
   } catch (error) {
