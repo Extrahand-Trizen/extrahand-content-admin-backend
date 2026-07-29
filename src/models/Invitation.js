@@ -61,7 +61,6 @@ const InvitationSchema = new mongoose.Schema(
 
 // Index for efficient queries
 InvitationSchema.index({ email: 1, status: 1 });
-InvitationSchema.index({ expiresAt: 1 });
 
 // Method to check if invitation is expired
 InvitationSchema.methods.isExpired = function () {

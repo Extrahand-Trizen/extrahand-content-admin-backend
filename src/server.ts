@@ -36,9 +36,11 @@ const isOriginAllowed = (origin: string): boolean => {
   // Parse allowed origins from environment
   const envOrigins = process.env.ALLOWED_ORIGINS 
     ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
-    : process.env.CLIENT_URL 
-      ? [process.env.CLIENT_URL]
-      : ['http://localhost:3000'];
+    : [];
+
+  const clientUrlOrigins = process.env.CLIENT_URL 
+    ? [process.env.CLIENT_URL.trim()]
+    : [];
 
   // Core production and development origins
   const defaultOrigins = [
@@ -48,7 +50,7 @@ const isOriginAllowed = (origin: string): boolean => {
     'http://localhost:3000'
   ];
 
-  const allOrigins = Array.from(new Set([...envOrigins, ...defaultOrigins])).map(normalizeOrigin);
+  const allOrigins = Array.from(new Set([...envOrigins, ...clientUrlOrigins, ...defaultOrigins])).map(normalizeOrigin);
 
   if (allOrigins.includes(normalizedReqOrigin)) {
     return true;
@@ -74,10 +76,17 @@ const corsOptions = {
       return callback(null, true);
     }
     
-    if (isOriginAllowed(origin)) {
+    const allowed = isOriginAllowed(origin);
+    if (allowed) {
+      console.log(`✅ [CORS] Origin ALLOWED: "${origin}"`);
       callback(null, true);
     } else {
+      console.warn(`❌ [CORS] Origin REJECTED: "${origin}"`);
+      console.warn(`📋 [CORS] ALLOWED_ORIGINS env: "${process.env.ALLOWED_ORIGINS}"`);
+      console.warn(`📋 [CORS] CLIENT_URL env: "${process.env.CLIENT_URL}"`);
+      
       if (process.env.NODE_ENV === 'development') {
+        console.log(`⚠️ [CORS] Allowing "${origin}" because NODE_ENV=development`);
         callback(null, true);
       } else {
         callback(null, false);
