@@ -28,34 +28,74 @@ const app = express();
 const PORT = 5001;
 
 // CORS Configuration
-const allowedOrigins = process.env.ALLOWED_ORIGINS 
-  ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
-  : process.env.CLIENT_URL 
-    ? [process.env.CLIENT_URL]
-    : ['http://localhost:3000'];
+const normalizeOrigin = (origin: string) => origin.replace(/\/+$/, '');
+
+const isOriginAllowed = (origin: string): boolean => {
+  const normalizedReqOrigin = normalizeOrigin(origin);
+
+  // Parse allowed origins from environment
+  const envOrigins = process.env.ALLOWED_ORIGINS 
+    ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+    : process.env.CLIENT_URL 
+      ? [process.env.CLIENT_URL]
+      : ['http://localhost:3000'];
+
+  // Core production and development origins
+  const defaultOrigins = [
+    'https://content.extrahand.in',
+    'https://extrahand.in',
+    'http://localhost:4000',
+    'http://localhost:3000'
+  ];
+
+  const allOrigins = Array.from(new Set([...envOrigins, ...defaultOrigins])).map(normalizeOrigin);
+
+  if (allOrigins.includes(normalizedReqOrigin)) {
+    return true;
+  }
+
+  // Allow subdomains of extrahand.in (e.g. https://extrahand.in or https://*.extrahand.in)
+  try {
+    const url = new URL(normalizedReqOrigin);
+    if (url.hostname === 'extrahand.in' || url.hostname.endsWith('.extrahand.in')) {
+      return true;
+    }
+  } catch (e) {
+    // Invalid URL format
+  }
+
+  return false;
+};
 
 const corsOptions = {
   origin: function (origin: string | undefined, callback: any) {
-    // Allow requests with no origin (like mobile apps or curl requests)
+    // Allow requests with no origin (like mobile apps, server-to-server, or curl requests)
     if (!origin) {
       return callback(null, true);
     }
     
-    // Check if origin is in allowed list
-    if (allowedOrigins.indexOf(origin) !== -1) {
+    if (isOriginAllowed(origin)) {
       callback(null, true);
     } else {
-      // In development, allow all origins
       if (process.env.NODE_ENV === 'development') {
         callback(null, true);
       } else {
-        callback(new Error('Not allowed by CORS'));
+        callback(null, false);
       }
     }
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Service-Auth', 'X-Service-Name'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Service-Auth',
+    'X-Service-Name',
+    'Accept',
+    'X-Requested-With',
+    'Cache-Control',
+    'Pragma'
+  ],
   exposedHeaders: ['Content-Range', 'X-Content-Range'],
   maxAge: 86400, // 24 hours
 };
