@@ -863,6 +863,9 @@ const TaskSubcategorySchema = new mongoose.Schema(
 TaskSubcategorySchema.index({ slug: 1 }, { unique: true, partialFilterExpression: { isPublished: true } });
 TaskSubcategorySchema.index({ categorySlug: 1 });
 TaskSubcategorySchema.index({ isPublished: 1 });
+TaskSubcategorySchema.index({ status: 1, createdAt: -1 });
+TaskSubcategorySchema.index({ createdBy: 1, status: 1 });
+TaskSubcategorySchema.index({ createdAt: -1 });
 
 module.exports = mongoose.model('TaskSubcategory', TaskSubcategorySchema);
 

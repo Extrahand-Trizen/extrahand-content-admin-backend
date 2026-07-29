@@ -71,5 +71,11 @@ const seoPageSchema = new mongoose.Schema({
 
 seoPageSchema.index({ cityId: 1, areaId: 1, categorySlug: 1 });
 seoPageSchema.index({ isPublished: 1 });
+// Hot portal list / dashboard / writer filters
+seoPageSchema.index({ status: 1, createdAt: -1 });
+seoPageSchema.index({ writtenBy: 1, status: 1, createdAt: -1 });
+seoPageSchema.index({ pageType: 1, status: 1, createdAt: -1 });
+seoPageSchema.index({ categorySlug: 1, status: 1 });
+seoPageSchema.index({ slug: 1, status: 1, isPublished: 1, isCurrentVersion: 1 });
 
 module.exports = mongoose.model('SeoPage', seoPageSchema);

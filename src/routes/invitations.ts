@@ -450,16 +450,18 @@ invitationRouter.get(
       const limitNum = parseInt(limit as string, 10) || 20;
       const skip = (pageNum - 1) * limitNum;
 
-      // Get total count
-      const total = await Invitation.countDocuments(query);
-
-      // Get paginated invitations
-      const invitations = await Invitation.find(query)
-        .populate('invitedBy', 'name email')
-        .populate('usedBy', 'name email')
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limitNum);
+      // Get total count + paginated invitations in parallel (never return invite tokens)
+      const [total, invitations] = await Promise.all([
+        Invitation.countDocuments(query),
+        Invitation.find(query)
+          .select('-token')
+          .populate('invitedBy', 'name email')
+          .populate('usedBy', 'name email')
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limitNum)
+          .lean(),
+      ]);
 
       const totalPages = Math.ceil(total / limitNum);
 

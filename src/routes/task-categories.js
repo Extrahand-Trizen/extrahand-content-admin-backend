@@ -39,10 +39,7 @@ router.get('/', optionalAuth, async (req, res) => {
       }
 
       // Public: published category only
-      const item = await TaskCategory.findOne({
-        slug,
-        $or: [{ isPublished: true }, { status: 'PUBLISHED' }, { status: 'APPROVED' }],
-      })
+      const item = await TaskCategory.findOne({ slug, isPublished: true })
         .populate('createdBy', 'name email');
 
       if (item) {
@@ -50,10 +47,7 @@ router.get('/', optionalAuth, async (req, res) => {
       }
 
       // Public: published subcategory only
-      const subcategory = await TaskSubcategory.findOne({
-        slug,
-        $or: [{ isPublished: true }, { status: 'PUBLISHED' }, { status: 'APPROVED' }],
-      })
+      const subcategory = await TaskSubcategory.findOne({ slug, isPublished: true })
         .populate('createdBy', 'name email');
 
       if (subcategory) {
@@ -87,8 +81,7 @@ router.get('/', optionalAuth, async (req, res) => {
     } else if (includeUnpublished) {
       filter = {};
     } else {
-      // Public users see only published categories
-      filter = { $or: [{ isPublished: true }, { status: 'PUBLISHED' }, { status: 'APPROVED' }] };
+      filter = { isPublished: true };
     }
     
     // Optional author filter for content_access_manager
@@ -99,19 +92,31 @@ router.get('/', optionalAuth, async (req, res) => {
     
     
     // Lean list: only fields needed for list view (avoids sending hero, staticTasks, earnings, etc.)
-    const listFields = 'name slug status isPublished categoryType subcategory subcategorySlug heroImage heroTitle heroDescription createdBy createdAt updatedAt';
-    const categories = await TaskCategory.find(filter)
-      .select(listFields)
-      .populate('createdBy', 'name email')
-      .sort({ name: 1 })
-      .limit(2000)
-      .lean();
+    const listFields = 'name slug status isPublished subcategory subcategorySlug createdBy createdAt updatedAt categoryType';
+    const includeSubcategories = req.query.includeSubcategories !== 'false';
+    const pageNum = parseInt(String(req.query.page || ''), 10);
+    const usePagination = Number.isFinite(pageNum) && pageNum >= 1;
+    const limitNum = usePagination
+      ? Math.min(100, Math.max(1, parseInt(String(req.query.limit || '50'), 10) || 50))
+      : 2000;
+    const skip = usePagination ? (pageNum - 1) * limitNum : 0;
 
-    // Batch fetch all subcategories for all categories at once
+    const [categories, total] = await Promise.all([
+      TaskCategory.find(filter)
+        .select(listFields)
+        .populate('createdBy', 'name email')
+        .sort({ name: 1 })
+        .skip(skip)
+        .limit(limitNum)
+        .lean(),
+      usePagination ? TaskCategory.countDocuments(filter) : Promise.resolve(null),
+    ]);
+
+    // Batch fetch all subcategories for all categories at once (skip when FE loads them separately)
     const categorySlugs = categories.map(cat => cat.slug);
     let allSubcategories = [];
     
-    if (categorySlugs.length > 0) {
+    if (includeSubcategories && categorySlugs.length > 0) {
       const subcategoryFilter = { categorySlug: { $in: categorySlugs } };
       
       // Apply status/published filters to subcategories based on user role
@@ -126,7 +131,7 @@ router.get('/', optionalAuth, async (req, res) => {
         // No additional filter
       } else {
         // Public users by default see only published
-        subcategoryFilter.$or = [{ isPublished: true }, { status: 'PUBLISHED' }, { status: 'APPROVED' }];
+        subcategoryFilter.isPublished = true;
       }
       
       allSubcategories = await TaskSubcategory.find(subcategoryFilter)
@@ -143,41 +148,42 @@ router.get('/', optionalAuth, async (req, res) => {
       subcategoriesByCategory[sub.categorySlug].push(sub);
     });
 
-    // Attach subcategories to each category
-    const categoriesWithSubcategories = categories.map((category) => {
-      // First, check if we have real subcategories
-      const realSubcategories = subcategoriesByCategory[category.slug] || [];
-      
-      if (realSubcategories.length > 0) {
-        return {
-          ...category,
-          subcategories: realSubcategories,
-        };
-      }
-      
-      // Fallback: use legacy subcategory field if it exists
-      if (category.subcategory && category.subcategorySlug) {
-        return {
-          ...category,
-          subcategories: [
-            {
-              name: category.subcategory,
-              slug: category.subcategorySlug,
-              categorySlug: category.slug,
-              status: 'PUBLISHED',
-              isPublished: true,
-            },
-          ],
-        };
-      }
-      
-      // No subcategories found
-      return {
-        ...category,
-        subcategories: [],
-      };
-    });
+    // Attach subcategories to each category (or return bare list when includeSubcategories=false)
+    const categoriesWithSubcategories = includeSubcategories
+      ? categories.map((category) => {
+          const realSubcategories = subcategoriesByCategory[category.slug] || [];
+          if (realSubcategories.length > 0) {
+            return { ...category, subcategories: realSubcategories };
+          }
+          if (category.subcategory && category.subcategorySlug) {
+            return {
+              ...category,
+              subcategories: [
+                {
+                  name: category.subcategory,
+                  slug: category.subcategorySlug,
+                  categorySlug: category.slug,
+                  status: 'PUBLISHED',
+                  isPublished: true,
+                },
+              ],
+            };
+          }
+          return { ...category, subcategories: [] };
+        })
+      : categories;
 
+    if (usePagination) {
+      return res.status(200).json({
+        data: categoriesWithSubcategories,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: total || 0,
+          pages: Math.ceil((total || 0) / limitNum) || 1,
+        },
+      });
+    }
 
     return res.status(200).json(categoriesWithSubcategories);
   } catch (error) {

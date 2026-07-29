@@ -103,5 +103,8 @@ ArticleSchema.index({ category: 1 });
 ArticleSchema.index({ subcategory: 1 });
 ArticleSchema.index({ subSubcategory: 1 });
 ArticleSchema.index({ createdAt: -1 });
+ArticleSchema.index({ status: 1, createdAt: -1 });
+ArticleSchema.index({ createdBy: 1, status: 1, createdAt: -1 });
+ArticleSchema.index({ isPublished: 1, status: 1 });
 
 module.exports = mongoose.model('Article', ArticleSchema);

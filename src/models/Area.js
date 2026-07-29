@@ -7,4 +7,6 @@ const areaSchema = new mongoose.Schema({
   isActive: { type: Boolean, default: true },
 }, { timestamps: true });
 
+areaSchema.index({ cityId: 1, isActive: 1, name: 1 });
+
 module.exports = mongoose.model('Area', areaSchema);
