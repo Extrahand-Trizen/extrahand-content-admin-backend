@@ -6,6 +6,7 @@ const authenticate = require("../middleware/auth");
 const optionalAuth = require("../middleware/auth").optionalAuth;
 const allowRoles = require("../middleware/roles");
 const multer = require("multer");
+const { publicWebStatusFilter } = require("../utils/publicWebContent");
 
 // Configure Multer for memory storage (files will be available in req.files)
 const upload = multer({
@@ -59,8 +60,8 @@ router.get("/", optionalAuth, async (req, res) => {
         filter.categorySlug = categorySlug;
       }
       if (!canPreview) {
-        // Only return published subcategory (unpublished must not be visible on main website)
-        filter.isPublished = true;
+        // Approved + published subcategories are live on the public website
+        filter.status = { $in: publicWebStatusFilter.status.$in };
       }
 
       const subcategory = await TaskSubcategory.findOne(filter).populate(
@@ -87,7 +88,7 @@ router.get("/", optionalAuth, async (req, res) => {
         },
       };
     } else {
-      filter = { isPublished: true };
+      filter = { ...publicWebStatusFilter };
     }
     
     // Optional author filter for content_access_manager
@@ -136,14 +137,16 @@ router.get("/", optionalAuth, async (req, res) => {
 
       // Backward-compatible fallback: derive a single subcategory from legacy fields on TaskCategory
       const parentCategory = await TaskCategory.findOne({ slug: categorySlug })
-        .select("subcategory subcategorySlug isPublished")
+        .select("subcategory subcategorySlug isPublished status")
         .lean();
 
       const shouldExposeLegacy =
         parentCategory &&
         parentCategory.subcategory &&
         parentCategory.subcategorySlug &&
-        (filter.isPublished ? parentCategory.isPublished === true : true);
+        (filter.status
+          ? publicWebStatusFilter.status.$in.includes(parentCategory.status)
+          : true);
 
       if (shouldExposeLegacy) {
         const legacy = [

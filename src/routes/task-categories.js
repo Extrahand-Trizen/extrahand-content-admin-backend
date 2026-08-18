@@ -5,6 +5,7 @@ const TaskSubcategory = require('../models/TaskSubcategory');
 const authenticate = require('../middleware/auth');
 const optionalAuth = require('../middleware/auth').optionalAuth;
 const allowRoles = require('../middleware/roles');
+const { publicWebStatusFilter } = require('../utils/publicWebContent');
 
 // GET - Fetch all categories or a single category by slug (PUBLIC; optional auth for draft preview)
 router.get('/', optionalAuth, async (req, res) => {
@@ -38,16 +39,16 @@ router.get('/', optionalAuth, async (req, res) => {
         }
       }
 
-      // Public: published category only
-      const item = await TaskCategory.findOne({ slug, isPublished: true })
+      // Public: approved or published category (live on website)
+      const item = await TaskCategory.findOne({ slug, ...publicWebStatusFilter })
         .populate('createdBy', 'name email');
 
       if (item) {
         return res.status(200).json(item);
       }
 
-      // Public: published subcategory only
-      const subcategory = await TaskSubcategory.findOne({ slug, isPublished: true })
+      // Public: approved or published subcategory
+      const subcategory = await TaskSubcategory.findOne({ slug, ...publicWebStatusFilter })
         .populate('createdBy', 'name email');
 
       if (subcategory) {
@@ -81,7 +82,8 @@ router.get('/', optionalAuth, async (req, res) => {
     } else if (includeUnpublished) {
       filter = {};
     } else {
-      filter = { isPublished: true };
+      // Public website: approved + published (not draft/pending/rejected)
+      filter = { ...publicWebStatusFilter };
     }
     
     // Optional author filter for content_access_manager
@@ -130,8 +132,8 @@ router.get('/', optionalAuth, async (req, res) => {
         // Public users with includeUnpublished=true see all (for preview pages)
         // No additional filter
       } else {
-        // Public users by default see only published
-        subcategoryFilter.isPublished = true;
+        // Public website: approved + published subcategories
+        subcategoryFilter.status = { $in: publicWebStatusFilter.status.$in };
       }
       
       allSubcategories = await TaskSubcategory.find(subcategoryFilter)
