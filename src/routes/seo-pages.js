@@ -198,7 +198,12 @@ router.get('/published', async (req, res) => {
   try {
     const { slug } = req.query;
     if (!slug) {
-      return res.status(400).json({ error: 'Slug is required' });
+      const pages = await SeoPage.find({
+        status: 'PUBLISHED',
+        isPublished: true,
+        isCurrentVersion: true,
+      }).select('slug pageType categorySlug citySlug areaSlug').lean();
+      return res.status(200).json(pages);
     }
     const page = await SeoPage.findOne({
       slug,
