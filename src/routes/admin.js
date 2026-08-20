@@ -1889,7 +1889,7 @@ router.post('/subcategories/unapprove-bulk', authenticate, allowRoles('reviewer'
 
 const City = require('../models/City');
 const Area = require('../models/Area');
-const { generateSlug } = require('../utils/seoPageUtils');
+const { generateSlug, findCityByIdOrSlug, findAreaByIdOrSlug } = require('../utils/seoPageUtils');
 
 // POST - Approve SEO page
 router.post('/seo-pages/:id/approve', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
@@ -1992,11 +1992,11 @@ router.post('/seo-pages/:id/publish', authenticate, allowRoles('reviewer', 'cont
     }
 
     // Regenerate the real slug for the new version (draft copies have mangled slugs)
-    const city = await City.findById(page.cityId);
-    const area = page.areaId ? await Area.findById(page.areaId) : null;
+    const city = await findCityByIdOrSlug(page.cityId || page.citySlug);
+    const area = page.areaId ? await findAreaByIdOrSlug(page.areaId, city) : null;
     const realSlug = generateSlug(
       page.categorySlug,
-      city ? city.slug : page.citySlug,
+      city ? city.slug : (page.citySlug || 'hyderabad'),
       area ? area.slug : null
     );
 

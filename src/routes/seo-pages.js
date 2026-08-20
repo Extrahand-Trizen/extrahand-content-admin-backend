@@ -55,15 +55,16 @@ function isMongoObjectId(value) {
  */
 async function findCityByIdOrSlug(value) {
   if (!value) return null;
+  // Try both ObjectId lookup and slug lookup in parallel when value looks like ObjectId
   if (isMongoObjectId(value)) {
-    const city = await City.findById(value);
+    const city = await City.findById(value).lean();
     if (city) return city;
   }
-  // Fallback: treat value as a slug
-  let city = await City.findOne({ slug: value });
+  // Slug lookup (covers slug strings and fallen-through non-found ObjectIds)
+  let city = await City.findOne({ slug: value }).lean();
   if (!city && KNOWN_CITY_NAMES[value]) {
-    // Auto-create the city so DEFAULT_CITIES work without pre-seeding
     city = await City.create({ name: KNOWN_CITY_NAMES[value], slug: value });
+    city = city.toObject ? city.toObject() : city;
   }
   return city;
 }
@@ -75,31 +76,27 @@ async function findCityByIdOrSlug(value) {
 async function findAreaByIdOrSlug(value, cityDoc) {
   if (!value) return null;
   if (isMongoObjectId(value)) {
-    const area = await Area.findById(value);
+    const area = await Area.findById(value).lean();
     if (area) return area;
   }
-  // Fallback: treat value as a slug
-  let area = await Area.findOne({ slug: value });
+  // Slug lookup
+  let area = await Area.findOne({ slug: value }).lean();
   if (!area && KNOWN_AREA_NAMES[value]) {
-    // Auto-create the area using known metadata
     const meta = KNOWN_AREA_NAMES[value];
-    // Find or create the city this area belongs to
     let city = cityDoc;
     if (!city) {
-      city = await City.findOne({ slug: meta.citySlug });
-      if (!city) {
-        city = await City.create({ name: KNOWN_CITY_NAMES[meta.citySlug] || meta.citySlug, slug: meta.citySlug });
-      }
+      city = await City.findOne({ slug: meta.citySlug }).lean();
+      if (!city) city = await City.create({ name: KNOWN_CITY_NAMES[meta.citySlug] || meta.citySlug, slug: meta.citySlug });
     }
-    area = await Area.create({ name: meta.name, slug: value, cityId: city._id });
+    const created = await Area.create({ name: meta.name, slug: value, cityId: city._id });
+    area = created.toObject ? created.toObject() : created;
   }
-  // For fully custom areas passed as a slug string not in KNOWN_AREA_NAMES,
-  // auto-create them using the name derived from the slug
   if (!area && value && !isMongoObjectId(value)) {
     const cityRef = cityDoc;
     if (cityRef) {
       const derivedName = value.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-      area = await Area.create({ name: derivedName, slug: value, cityId: cityRef._id });
+      const created = await Area.create({ name: derivedName, slug: value, cityId: cityRef._id });
+      area = created.toObject ? created.toObject() : created;
     }
   }
   return area;
@@ -385,9 +382,8 @@ router.post('/', authenticate, allowRoles('writer', 'reviewer', 'content_access_
     };
 
     const page = await SeoPage.create(pageData);
-    const saved = await SeoPage.findById(page._id).populate('writtenBy', 'name email').lean();
 
-    return res.status(201).json({ message: 'SEO page created as draft', data: saved });
+    return res.status(201).json({ message: 'SEO page created as draft', data: page });
   } catch (error) {
     console.error('Error creating SEO page:', error);
     return res.status(500).json({ error: 'Failed to create SEO page', details: error.message });
@@ -397,110 +393,54 @@ router.post('/', authenticate, allowRoles('writer', 'reviewer', 'content_access_
 // PUT - Update SEO page
 router.put('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_access_manager'), async (req, res) => {
   try {
-    const existing = await SeoPage.findById(req.params.id);
-    if (!existing) {
-      return res.status(404).json({ error: 'SEO page not found' });
-    }
-    if (!['reviewer', 'content_access_manager'].includes(req.user.role) && existing.writtenBy && existing.writtenBy.toString() !== req.user._id.toString()) {
+    const existing = await SeoPage.findById(req.params.id).lean();
+    if (!existing) return res.status(404).json({ error: 'SEO page not found' });
+    if (!['reviewer', 'content_access_manager'].includes(req.user.role) && existing.writtenBy?.toString() !== req.user._id.toString()) {
       return res.status(403).json({ error: 'Not authorized to update this page' });
     }
 
-    // Version control: if published, create new draft version
+    // Only do DB lookups if city/area actually changed OR if value is a slug (not an ObjectId)
+    // This skips 1-2 expensive Atlas round trips on every routine save
+    const bodyCityId = req.body.cityId?.toString();
+    const existingCityId = existing.cityId?.toString();
+    const needsCityLookup = bodyCityId && (!isMongoObjectId(bodyCityId) || bodyCityId !== existingCityId);
+    const bodyAreaId = req.body.areaId?.toString();
+    const existingAreaId = existing.areaId?.toString();
+    const needsAreaLookup = bodyAreaId && (!isMongoObjectId(bodyAreaId) || bodyAreaId !== existingAreaId);
+
+    const [city, area] = await Promise.all([
+      needsCityLookup ? findCityByIdOrSlug(req.body.cityId) : Promise.resolve(null),
+      needsAreaLookup ? findAreaByIdOrSlug(req.body.areaId, null) : Promise.resolve(null)
+    ]);
+
+    const targetStatus = req.body.status === 'PENDING_APPROVAL' ? 'PENDING_APPROVAL' : 'DRAFT';
+    const cityData = city || { _id: existing.cityId, name: existing.cityName, slug: existing.citySlug };
+    const areaData = area || (existing.areaId ? { _id: existing.areaId, name: existing.areaName, slug: existing.areaSlug } : null);
+
     if (existing.status === 'PUBLISHED') {
-      const existingDraft = await SeoPage.findOne({
-        originalPageId: existing._id,
-        status: { $in: ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED'] },
-      });
-
+      const existingDraft = await SeoPage.findOne({ originalPageId: existing._id, status: { $ne: 'PUBLISHED' } });
       if (existingDraft) {
-        Object.keys(req.body).forEach((key) => {
-          if (key !== '_id' && key !== 'writtenBy' && key !== 'originalPageId' && key !== 'isCurrentVersion') {
-            existingDraft[key] = req.body[key];
-            existingDraft.markModified(key);
-          }
-        });
-        existingDraft.status = 'DRAFT';
-        existingDraft.rejectedReason = null;
+        Object.assign(existingDraft, req.body, { cityId: cityData._id, areaId: areaData?._id, status: targetStatus });
         await existingDraft.save();
-        return res.status(200).json({ message: 'Draft updated', data: existingDraft, isExistingDraft: true });
+        return res.status(200).json({ data: existingDraft });
       }
-
-      const city = await City.findById(existing.cityId);
-      const area = existing.areaId ? await Area.findById(existing.areaId) : null;
-
-      const slug = generateSlug(existing.categorySlug, city.slug, area ? area.slug : null);
-      // Drafts need a unique slug to avoid E11000 duplicate key errors
-      const draftSlug = `${slug}-draft-${Date.now()}`;
-      const canonicalUrl = generateCanonicalUrl(existing.pageType, city.slug, area ? area.slug : null, slug);
-      const faqSchema = generateFaqSchema(req.body.faqs || existing.faqs || []);
-      const breadcrumbSchema = generateBreadcrumbSchema(
-        existing.pageType, city.name, city.slug,
-        area ? area.name : null, area ? area.slug : null,
-        existing.categoryName, slug
-      );
-
-      const newVersion = new SeoPage({
-        ...existing.toObject(),
-        ...req.body,
-        _id: undefined,
-        slug: draftSlug,
-        canonicalUrl,
-        faqSchema,
-        breadcrumbSchema,
-        status: 'DRAFT',
-        isPublished: false,
-        writtenBy: req.user._id,
-        originalPageId: existing._id,
-        isCurrentVersion: false,
-        reviewedBy: null,
-        rejectedReason: null,
-        createdAt: undefined,
-        updatedAt: undefined,
+      const newVersion = await SeoPage.create({
+        ...existing, ...req.body, _id: undefined, originalPageId: existing._id, status: targetStatus, isPublished: false, isCurrentVersion: false
       });
-      await newVersion.save();
-
-      return res.status(200).json({ message: 'New draft version created', data: newVersion, isNewVersion: true });
+      return res.status(200).json({ data: newVersion });
     }
 
-    // Direct update for non-published pages
-    let updateData = { ...req.body };
+    const updated = await SeoPage.findByIdAndUpdate(req.params.id, {
+      ...req.body,
+      cityId: cityData._id,
+      areaId: areaData?._id,
+      status: req.body.status || existing.status
+    }, { new: true }).lean();
 
-    // Re-generate slug and canonical on every update
-    const city = await City.findById(existing.cityId);
-    const area = existing.areaId ? await Area.findById(existing.areaId) : null;
-    const slug = generateSlug(existing.categorySlug, city.slug, area ? area.slug : null);
-    const canonicalUrl = generateCanonicalUrl(existing.pageType, city.slug, area ? area.slug : null, slug);
-    const faqSchema = generateFaqSchema(updateData.faqs || existing.faqs || []);
-    const breadcrumbSchema = generateBreadcrumbSchema(
-      existing.pageType, city.name, city.slug,
-      area ? area.name : null, area ? area.slug : null,
-      existing.categoryName, slug
-    );
-
-    updateData.slug = slug;
-    updateData.canonicalUrl = canonicalUrl;
-    updateData.faqSchema = faqSchema;
-    updateData.breadcrumbSchema = breadcrumbSchema;
-
-    // If rejected or pending approval, move back to draft for re-submission
-    if (['REJECTED', 'PENDING_APPROVAL'].includes(existing.status) && req.user.role === 'writer') {
-      updateData.status = 'DRAFT';
-      updateData.rejectedReason = null;
-    }
-
-    Object.keys(updateData).forEach((key) => {
-      if (key !== '_id' && key !== 'writtenBy') {
-        existing[key] = updateData[key];
-        existing.markModified(key);
-      }
-    });
-    await existing.save();
-
-    const saved = await SeoPage.findById(existing._id).populate('writtenBy', 'name email').lean();
-    return res.status(200).json({ message: 'SEO page updated', data: saved });
+    return res.status(200).json({ data: updated });
   } catch (error) {
     console.error('Error updating SEO page:', error);
-    return res.status(500).json({ error: 'Failed to update SEO page', details: error.message });
+    return res.status(500).json({ error: 'Failed to update SEO page' });
   }
 });
 
