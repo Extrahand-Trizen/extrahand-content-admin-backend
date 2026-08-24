@@ -47,11 +47,20 @@ const blogSchema = new mongoose.Schema({
   publishedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
 }, { timestamps: true });
 
-blogSchema.index({ slug: 1 });
+// Slug is already unique-indexed via `unique: true` in the field definition
+blogSchema.index({ createdAt: -1 });
 blogSchema.index({ status: 1, createdAt: -1 });
-blogSchema.index({ categorySlug: 1, status: 1 });
-blogSchema.index({ citySlug: 1, status: 1 });
+blogSchema.index({ categorySlug: 1, createdAt: -1 });
+blogSchema.index({ categorySlug: 1, status: 1, createdAt: -1 });
+blogSchema.index({ cityId: 1, createdAt: -1 });
+blogSchema.index({ cityId: 1, status: 1, createdAt: -1 });
+blogSchema.index({ citySlug: 1, createdAt: -1 });
+blogSchema.index({ citySlug: 1, status: 1, createdAt: -1 });
+blogSchema.index({ writtenBy: 1, createdAt: -1 });
 blogSchema.index({ writtenBy: 1, status: 1, createdAt: -1 });
-blogSchema.index({ isPublished: 1, status: 1, createdAt: -1 });
+blogSchema.index({ isPublished: 1, status: 1, publishedAt: -1, createdAt: -1 });
+blogSchema.index({ isPublished: 1, status: 1, categorySlug: 1, publishedAt: -1 });
+blogSchema.index({ isPublished: 1, status: 1, citySlug: 1, publishedAt: -1 });
 
 module.exports = mongoose.model('Blog', blogSchema);
+

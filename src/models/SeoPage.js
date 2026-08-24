@@ -69,6 +69,7 @@ const seoPageSchema = new mongoose.Schema({
   isCurrentVersion: { type: Boolean, default: true },
 }, { timestamps: true });
 
+seoPageSchema.index({ createdAt: -1 });
 seoPageSchema.index({ cityId: 1, areaId: 1, categorySlug: 1 });
 seoPageSchema.index({ isPublished: 1 });
 // Hot portal list / dashboard / writer filters

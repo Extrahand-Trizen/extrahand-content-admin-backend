@@ -94,7 +94,6 @@ router.get('/', authenticate, async (req, res) => {
       'areaId',
       'areaName',
       'areaSlug',
-      'heroImage',
       'status',
       'isPublished',
       'writtenBy',
@@ -183,6 +182,7 @@ router.get('/published', async (req, res) => {
       Blog.countDocuments(filter),
     ]);
 
+    res.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120');
     return res.status(200).json({
       data: blogs,
       pagination: {

@@ -14,6 +14,8 @@ const {
   replaceLocationName,
 } = require('../utils/seoPageUtils');
 
+const FULL_SEO_PAGE_ACCESS_ROLES = ['reviewer', 'content_access_manager', 'manager'];
+
 // Known city slugs from DEFAULT_CITIES in the frontend — used for auto-creation
 const KNOWN_CITY_NAMES = {
   hyderabad: 'Hyderabad', bangalore: 'Bangalore', mumbai: 'Mumbai',
@@ -110,26 +112,42 @@ router.get('/', authenticate, async (req, res) => {
   try {
     const { pageType, cityId, status, categorySlug, search, page, limit, slug } = req.query;
     const filter = {};
-    if (req.user && req.user.role === 'writer') {
+    if (req.user && !FULL_SEO_PAGE_ACCESS_ROLES.includes(req.user.role)) {
       filter.writtenBy = req.user._id;
     }
-    if (pageType) filter.pageType = pageType;
-    if (cityId) filter.cityId = cityId;
-    if (slug) filter.slug = slug;
-    if (status) {
-      if (status.includes(',')) {
-        filter.status = { $in: status.split(',') };
+    if (pageType && pageType.trim() && pageType.trim() !== 'all') {
+      filter.pageType = pageType.trim();
+    }
+    if (cityId && cityId.trim() && cityId.trim() !== 'all') {
+      const cleanCityId = cityId.trim();
+      if (isMongoObjectId(cleanCityId)) {
+        filter.cityId = cleanCityId;
       } else {
-        filter.status = status;
+        filter.citySlug = cleanCityId;
       }
     }
-    if (categorySlug) filter.categorySlug = categorySlug;
-    if (search) {
+    if (slug && slug.trim()) {
+      filter.slug = slug.trim();
+    }
+    if (status && status.trim() && status.trim() !== 'all') {
+      const cleanStatus = status.trim();
+      if (cleanStatus.includes(',')) {
+        filter.status = { $in: cleanStatus.split(',').map(s => s.trim()).filter(Boolean) };
+      } else {
+        filter.status = cleanStatus;
+      }
+    }
+    if (categorySlug && categorySlug.trim() && categorySlug.trim() !== 'all') {
+      filter.categorySlug = categorySlug.trim();
+    }
+    if (search && search.trim()) {
+      const term = search.trim();
       filter.$or = [
-        { categoryName: { $regex: search, $options: 'i' } },
-        { cityName: { $regex: search, $options: 'i' } },
-        { areaName: { $regex: search, $options: 'i' } },
-        { metaTitle: { $regex: search, $options: 'i' } },
+        { categoryName: { $regex: term, $options: 'i' } },
+        { cityName: { $regex: term, $options: 'i' } },
+        { areaName: { $regex: term, $options: 'i' } },
+        { metaTitle: { $regex: term, $options: 'i' } },
+        { slug: { $regex: term, $options: 'i' } },
       ];
     }
 
@@ -162,17 +180,15 @@ router.get('/', authenticate, async (req, res) => {
     ].join(' ');
 
     let listQuery = SeoPage.find(filter)
-      .populate('writtenBy', 'name email')
+      .select(slug ? '' : SEO_LIST_FIELDS)
+      .populate({ path: 'writtenBy', select: 'name email', options: { strictPopulate: false } })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limitNum)
+      .allowDiskUse(true)
       .lean();
 
-    if (!slug) {
-      listQuery = listQuery.select(SEO_LIST_FIELDS);
-    }
-
-    const [pages, total] = await Promise.all([
+    let [pages, total] = await Promise.all([
       listQuery,
       SeoPage.countDocuments(filter),
     ]);
@@ -188,7 +204,22 @@ router.get('/', authenticate, async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching SEO pages:', error);
-    return res.status(500).json({ error: 'Failed to fetch SEO pages' });
+    return res.status(500).json({ error: 'Failed to fetch SEO pages', details: error.message });
+  }
+});
+
+// GET - Lightweight list of published SEO page slugs for route generation (public, used by website build)
+router.get('/published/slugs', async (req, res) => {
+  try {
+    const pages = await SeoPage.find({
+      status: 'PUBLISHED',
+      isPublished: true,
+      isCurrentVersion: true,
+    }).select('slug isPublished updatedAt -_id').lean();
+    return res.status(200).json(pages);
+  } catch (error) {
+    console.error('Error fetching published SEO page slugs:', error);
+    return res.status(500).json({ error: 'Failed to fetch slugs' });
   }
 });
 
@@ -252,7 +283,7 @@ router.get('/:id', authenticate, async (req, res) => {
     if (!page) {
       return res.status(404).json({ error: 'SEO page not found' });
     }
-    if (!['reviewer', 'content_access_manager'].includes(req.user.role)) {
+    if (!FULL_SEO_PAGE_ACCESS_ROLES.includes(req.user.role)) {
       const writtenById = page.writtenBy?._id || page.writtenBy;
       if (writtenById && writtenById.toString() !== req.user._id.toString()) {
         return res.status(403).json({ error: 'Not authorized to view this page' });
