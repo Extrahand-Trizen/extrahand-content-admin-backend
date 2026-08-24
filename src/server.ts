@@ -15,6 +15,7 @@ const authRouter = require('./routes/auth');
 const articlesRouter = require('./routes/articles');
 const adminRouter = require('./routes/admin');
 const seoPagesRouter = require('./routes/seo-pages');
+const blogsRouter = require('./routes/blogs');
 const citiesRouter = require('./routes/cities');
 const authenticate = require('./middleware/auth');
 const allowRoles = require('./middleware/roles');
@@ -137,6 +138,7 @@ app.use('/api/task-subcategories', taskSubcategoriesRouter);
 app.use('/api/task-sub-subcategories', taskSubSubcategoriesRouter);
 app.use('/api/articles', articlesRouter);
 app.use('/api/seo-pages', seoPagesRouter);
+app.use('/api/blogs', blogsRouter);
 app.use('/api/cities', citiesRouter);
 // Explicit analytics route so GET /api/admin/analytics always matches (avoids 404)
 app.get('/api/admin/analytics', authenticate, allowRoles('content_access_manager'), analyticsHandler);

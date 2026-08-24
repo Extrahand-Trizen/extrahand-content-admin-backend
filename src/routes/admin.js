@@ -6,6 +6,7 @@ const Article = require('../models/Article');
 const TaskCategory = require('../models/TaskCategory');
 const TaskSubcategory = require('../models/TaskSubcategory');
 const SeoPage = require('../models/SeoPage');
+const Blog = require('../models/Blog');
 const User = require('../models/User');
 const authenticate = require('../middleware/auth');
 const { invalidateAuthUserCache } = require('../middleware/auth');
@@ -775,23 +776,26 @@ router.get('/dashboard/stats', authenticate, allowRoles('reviewer', 'writer', 'c
     let articleFilter = {};
     let categoryFilter = {};
     let seoFilter = {};
+    let blogFilter = {};
 
     // Writers only see their own content stats
     if (req.user.role === 'writer') {
       articleFilter.createdBy = req.user._id;
       categoryFilter.createdBy = req.user._id;
       seoFilter.writtenBy = req.user._id;
+      blogFilter.writtenBy = req.user._id;
     }
 
     const canSeeUsers =
       req.user.role === 'reviewer' || req.user.role === 'content_access_manager';
 
-    const [articleStats, categoryStats, subcategoryStats, seoStats, userStats] =
+    const [articleStats, categoryStats, subcategoryStats, seoStats, blogStats, userStats] =
       await Promise.all([
         countByStatus(Article, articleFilter),
         countByStatus(TaskCategory, categoryFilter),
         countByStatus(TaskSubcategory, categoryFilter),
         countByStatus(SeoPage, seoFilter),
+        countByStatus(Blog, blogFilter),
         canSeeUsers ? countUsersByRole(User) : Promise.resolve({ byRole: {}, total: 0 }),
       ]);
 
@@ -821,6 +825,13 @@ router.get('/dashboard/stats', authenticate, allowRoles('reviewer', 'writer', 'c
         pending: statusCount(seoStats.byStatus, 'PENDING_APPROVAL'),
         approved: statusCount(seoStats.byStatus, 'APPROVED'),
         published: statusCount(seoStats.byStatus, 'PUBLISHED'),
+      },
+      blogs: {
+        total: blogStats.total,
+        pending: statusCount(blogStats.byStatus, 'PENDING_APPROVAL'),
+        approved: statusCount(blogStats.byStatus, 'APPROVED'),
+        published: statusCount(blogStats.byStatus, 'PUBLISHED'),
+        rejected: statusCount(blogStats.byStatus, 'REJECTED'),
       },
       users: {
         total: userStats.total,
@@ -1889,7 +1900,7 @@ router.post('/subcategories/unapprove-bulk', authenticate, allowRoles('reviewer'
 
 const City = require('../models/City');
 const Area = require('../models/Area');
-const { generateSlug, findCityByIdOrSlug, findAreaByIdOrSlug } = require('../utils/seoPageUtils');
+const { generateSlug } = require('../utils/seoPageUtils');
 
 // POST - Approve SEO page
 router.post('/seo-pages/:id/approve', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
@@ -1992,11 +2003,11 @@ router.post('/seo-pages/:id/publish', authenticate, allowRoles('reviewer', 'cont
     }
 
     // Regenerate the real slug for the new version (draft copies have mangled slugs)
-    const city = await findCityByIdOrSlug(page.cityId || page.citySlug);
-    const area = page.areaId ? await findAreaByIdOrSlug(page.areaId, city) : null;
+    const city = await City.findById(page.cityId);
+    const area = page.areaId ? await Area.findById(page.areaId) : null;
     const realSlug = generateSlug(
       page.categorySlug,
-      city ? city.slug : (page.citySlug || 'hyderabad'),
+      city ? city.slug : page.citySlug,
       area ? area.slug : null
     );
 
@@ -2079,28 +2090,143 @@ router.post('/seo-pages/:id/unpublish', authenticate, allowRoles('reviewer', 'co
   }
 });
 
-// POST - Unapprove SEO page (reset to DRAFT so writers can edit)
-router.post('/seo-pages/:id/unapprove', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
+// ============================================
+// BLOGS APPROVAL SYSTEM (Reviewer and content_access_manager only)
+// ============================================
+
+// POST - Approve Blog
+router.post('/blogs/:id/approve', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
   try {
     const { id } = req.params;
 
-    const page = await SeoPage.findById(id);
-    if (!page) {
-      return res.status(404).json({ error: 'SEO page not found' });
+    const blog = await Blog.findById(id);
+    if (!blog) {
+      return res.status(404).json({ error: 'Blog not found' });
     }
 
-    page.isPublished = false;
-    page.status = 'DRAFT';
+    if (blog.status !== 'PENDING_APPROVAL') {
+      return res.status(400).json({ error: 'Blog cannot be approved. Current status: ' + blog.status });
+    }
 
-    await page.save();
+    blog.status = 'APPROVED';
+    blog.reviewedBy = req.user._id;
+    blog.rejectedReason = null;
+
+    await blog.save();
 
     return res.status(200).json({
-      message: 'SEO page unapproved successfully',
-      data: page,
+      message: 'Blog approved successfully.',
+      data: blog,
     });
   } catch (error) {
-    console.error('Error unapproving SEO page:', error);
-    return res.status(500).json({ error: 'Failed to unapprove SEO page' });
+    console.error('Error approving blog:', error);
+    return res.status(500).json({ error: 'Failed to approve blog' });
+  }
+});
+
+// POST - Reject Blog
+router.post('/blogs/:id/reject', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason, reviewNotes } = req.body;
+
+    const blog = await Blog.findById(id);
+    if (!blog) {
+      return res.status(404).json({ error: 'Blog not found' });
+    }
+
+    blog.status = 'REJECTED';
+    blog.reviewedBy = req.user._id;
+    blog.rejectedReason = reason || reviewNotes || '';
+
+    await blog.save();
+
+    return res.status(200).json({
+      message: 'Blog rejected',
+      data: blog,
+    });
+  } catch (error) {
+    console.error('Error rejecting blog:', error);
+    return res.status(500).json({ error: 'Failed to reject blog' });
+  }
+});
+
+// POST - Publish Blog (or direct Approve & Publish)
+router.post('/blogs/:id/publish', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const blog = await Blog.findById(id);
+    if (!blog) {
+      return res.status(404).json({ error: 'Blog not found' });
+    }
+
+    blog.status = 'PUBLISHED';
+    blog.isPublished = true;
+    blog.reviewedBy = req.user._id;
+    blog.publishedBy = req.user._id;
+    blog.publishedAt = new Date();
+    blog.rejectedReason = null;
+
+    await blog.save();
+
+    return res.status(200).json({
+      message: 'Blog published successfully',
+      data: blog,
+    });
+  } catch (error) {
+    console.error('Error publishing blog:', error);
+    return res.status(500).json({ error: 'Failed to publish blog: ' + error.message });
+  }
+});
+
+// POST - Unpublish Blog
+router.post('/blogs/:id/unpublish', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const blog = await Blog.findById(id);
+    if (!blog) {
+      return res.status(404).json({ error: 'Blog not found' });
+    }
+
+    blog.isPublished = false;
+    blog.status = 'UNPUBLISHED';
+
+    await blog.save();
+
+    return res.status(200).json({
+      message: 'Blog unpublished successfully',
+      data: blog,
+    });
+  } catch (error) {
+    console.error('Error unpublishing blog:', error);
+    return res.status(500).json({ error: 'Failed to unpublish blog' });
+  }
+});
+
+// POST - Unapprove Blog (reset to DRAFT)
+router.post('/blogs/:id/unapprove', authenticate, allowRoles('reviewer', 'content_access_manager'), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const blog = await Blog.findById(id);
+    if (!blog) {
+      return res.status(404).json({ error: 'Blog not found' });
+    }
+
+    blog.isPublished = false;
+    blog.status = 'DRAFT';
+
+    await blog.save();
+
+    return res.status(200).json({
+      message: 'Blog reset to draft successfully',
+      data: blog,
+    });
+  } catch (error) {
+    console.error('Error unapproving blog:', error);
+    return res.status(500).json({ error: 'Failed to unapprove blog' });
   }
 });
 

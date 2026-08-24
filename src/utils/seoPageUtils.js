@@ -83,83 +83,10 @@ function replaceLocationName(content, fromName, toName) {
   return content;
 }
 
-const City = require('../models/City');
-const Area = require('../models/Area');
-
-const KNOWN_CITY_NAMES = {
-  hyderabad: 'Hyderabad', bangalore: 'Bangalore', mumbai: 'Mumbai',
-  delhi: 'Delhi', chennai: 'Chennai', pune: 'Pune', kolkata: 'Kolkata',
-  ahmedabad: 'Ahmedabad', surat: 'Surat', jaipur: 'Jaipur',
-  noida: 'Noida', gurugram: 'Gurugram',
-};
-
-const KNOWN_AREA_NAMES = {
-  'ameerpet': { name: 'Ameerpet', citySlug: 'hyderabad' },
-  'banjara-hills': { name: 'Banjara Hills', citySlug: 'hyderabad' },
-  'begumpet': { name: 'Begumpet', citySlug: 'hyderabad' },
-  'gachibowli': { name: 'Gachibowli', citySlug: 'hyderabad' },
-  'hitec-city': { name: 'Hitec City', citySlug: 'hyderabad' },
-  'jubilee-hills': { name: 'Jubilee Hills', citySlug: 'hyderabad' },
-  'kondapur': { name: 'Kondapur', citySlug: 'hyderabad' },
-  'kukatpally': { name: 'Kukatpally', citySlug: 'hyderabad' },
-  'madhapur': { name: 'Madhapur', citySlug: 'hyderabad' },
-  'miyapur': { name: 'Miyapur', citySlug: 'hyderabad' },
-  'secunderabad': { name: 'Secunderabad', citySlug: 'hyderabad' },
-  'uppal': { name: 'Uppal', citySlug: 'hyderabad' },
-};
-
-function isMongoObjectId(value) {
-  return /^[a-f\d]{24}$/i.test(value);
-}
-
-async function findCityByIdOrSlug(value) {
-  if (!value) return null;
-  if (isMongoObjectId(value)) {
-    const city = await City.findById(value);
-    if (city) return city;
-  }
-  let city = await City.findOne({ slug: value });
-  if (!city && KNOWN_CITY_NAMES[value]) {
-    city = await City.create({ name: KNOWN_CITY_NAMES[value], slug: value });
-  }
-  return city;
-}
-
-async function findAreaByIdOrSlug(value, cityDoc) {
-  if (!value) return null;
-  if (isMongoObjectId(value)) {
-    const area = await Area.findById(value);
-    if (area) return area;
-  }
-  let area = await Area.findOne({ slug: value });
-  if (!area && KNOWN_AREA_NAMES[value]) {
-    const meta = KNOWN_AREA_NAMES[value];
-    let city = cityDoc;
-    if (!city) {
-      city = await City.findOne({ slug: meta.citySlug });
-      if (!city) {
-        city = await City.create({ name: KNOWN_CITY_NAMES[meta.citySlug] || meta.citySlug, slug: meta.citySlug });
-      }
-    }
-    area = await Area.create({ name: meta.name, slug: value, cityId: city._id });
-  }
-  if (!area && value && !isMongoObjectId(value)) {
-    const cityRef = cityDoc;
-    if (cityRef) {
-      const derivedName = value.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-      area = await Area.create({ name: derivedName, slug: value, cityId: cityRef._id });
-    }
-  }
-  return area;
-}
-
 module.exports = {
   generateSlug,
   generateCanonicalUrl,
   generateFaqSchema,
   generateBreadcrumbSchema,
   replaceLocationName,
-  isMongoObjectId,
-  findCityByIdOrSlug,
-  findAreaByIdOrSlug,
 };
