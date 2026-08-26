@@ -215,7 +215,7 @@ router.get('/published/slugs', async (req, res) => {
       status: 'PUBLISHED',
       isPublished: true,
       isCurrentVersion: true,
-    }).select('slug isPublished updatedAt -_id').lean();
+    }).select('slug canonicalUrl isPublished updatedAt -_id').lean();
     return res.status(200).json(pages);
   } catch (error) {
     console.error('Error fetching published SEO page slugs:', error);
@@ -233,7 +233,7 @@ router.get('/published', async (req, res) => {
         status: 'PUBLISHED',
         isPublished: true,
         isCurrentVersion: true,
-      }).select('slug pageType categorySlug citySlug areaSlug').lean();
+      }).select('slug canonicalUrl pageType categorySlug citySlug areaSlug').lean();
       return res.status(200).json(pages);
     }
     const page = await SeoPage.findOne({
