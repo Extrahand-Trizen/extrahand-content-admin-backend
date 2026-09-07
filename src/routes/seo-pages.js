@@ -410,15 +410,18 @@ router.post('/', authenticate, allowRoles('writer', 'reviewer', 'content_access_
       faqs: contentData.faqs || [],
       faqSchema,
       breadcrumbSchema,
-      status: 'DRAFT',
+      // Allow 'PENDING_APPROVAL' so frontend can create-and-submit in one request
+      status: body.status === 'PENDING_APPROVAL' ? 'PENDING_APPROVAL' : 'DRAFT',
       isPublished: false,
       writtenBy: req.user._id,
     };
 
     const page = await SeoPage.create(pageData);
-    const saved = await SeoPage.findById(page._id).populate('writtenBy', 'name email').lean();
+    // Exclude heroImage from response — it can be megabytes and is not needed by the caller
+    const saved = await SeoPage.findById(page._id).select('-heroImage').populate('writtenBy', 'name email').lean();
 
-    return res.status(201).json({ message: 'SEO page created as draft', data: saved });
+    const msg = pageData.status === 'PENDING_APPROVAL' ? 'SEO page submitted for approval' : 'SEO page created as draft';
+    return res.status(201).json({ message: msg, data: saved });
   } catch (error) {
     console.error('Error creating SEO page:', error);
     return res.status(500).json({ error: 'Failed to create SEO page', details: error.message });
@@ -513,8 +516,12 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_acces
     updateData.faqSchema = faqSchema;
     updateData.breadcrumbSchema = breadcrumbSchema;
 
-    // If rejected or pending approval, move back to draft for re-submission
-    if (['REJECTED', 'PENDING_APPROVAL'].includes(existing.status) && req.user.role === 'writer') {
+    // If status is explicitly set to PENDING_APPROVAL in the body, honour it (direct submit flow).
+    // Otherwise, if the page was previously REJECTED or PENDING_APPROVAL and a writer is re-saving,
+    // reset back to DRAFT so it must go through approval again.
+    if (updateData.status === 'PENDING_APPROVAL') {
+      updateData.rejectedReason = null;
+    } else if (['REJECTED', 'PENDING_APPROVAL'].includes(existing.status) && req.user.role === 'writer') {
       updateData.status = 'DRAFT';
       updateData.rejectedReason = null;
     }
@@ -527,8 +534,10 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_acces
     });
     await existing.save();
 
-    const saved = await SeoPage.findById(existing._id).populate('writtenBy', 'name email').lean();
-    return res.status(200).json({ message: 'SEO page updated', data: saved });
+    // Exclude heroImage from response — it can be megabytes and is not needed by the caller
+    const saved = await SeoPage.findById(existing._id).select('-heroImage').populate('writtenBy', 'name email').lean();
+    const msg = existing.status === 'PENDING_APPROVAL' ? 'SEO page submitted for approval' : 'SEO page updated';
+    return res.status(200).json({ message: msg, data: saved });
   } catch (error) {
     console.error('Error updating SEO page:', error);
     return res.status(500).json({ error: 'Failed to update SEO page', details: error.message });
@@ -556,7 +565,7 @@ router.delete('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_ac
 // POST - Submit SEO page for approval
 router.post('/submit/:id', authenticate, allowRoles('writer', 'reviewer', 'content_access_manager'), async (req, res) => {
   try {
-    const page = await SeoPage.findById(req.params.id);
+    const page = await SeoPage.findById(req.params.id).select('writtenBy status');
     if (!page) {
       return res.status(404).json({ error: 'SEO page not found' });
     }
@@ -566,10 +575,12 @@ router.post('/submit/:id', authenticate, allowRoles('writer', 'reviewer', 'conte
     if (!['DRAFT', 'REJECTED'].includes(page.status)) {
       return res.status(400).json({ error: 'SEO page cannot be submitted for approval' });
     }
-    page.status = 'PENDING_APPROVAL';
-    page.rejectedReason = null;
-    await page.save();
-    return res.status(200).json({ message: 'SEO page submitted for approval', data: page });
+    const updated = await SeoPage.findByIdAndUpdate(
+      req.params.id,
+      { $set: { status: 'PENDING_APPROVAL', rejectedReason: null } },
+      { new: true }
+    ).select('-heroImage');
+    return res.status(200).json({ message: 'SEO page submitted for approval', data: updated });
   } catch (error) {
     console.error('Error submitting SEO page:', error);
     return res.status(500).json({ error: 'Failed to submit SEO page' });

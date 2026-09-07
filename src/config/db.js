@@ -21,9 +21,9 @@ const connectDB = async () => {
     const conn = await mongoose.connect(process.env.MONGODB_URI, {
       bufferCommands: false,
       family: 4, // Force IPv4
-      serverSelectionTimeoutMS: 5000,
+      serverSelectionTimeoutMS: 15000,
       socketTimeoutMS: 45000,
-      connectTimeoutMS: 5000,
+      connectTimeoutMS: 15000,
       maxPoolSize: 25,
       minPoolSize: 2,
       maxIdleTimeMS: 30000,
