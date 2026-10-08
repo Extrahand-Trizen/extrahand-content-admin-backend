@@ -22,6 +22,7 @@ const KNOWN_CITY_NAMES = {
   delhi: 'Delhi', chennai: 'Chennai', pune: 'Pune', kolkata: 'Kolkata',
   ahmedabad: 'Ahmedabad', surat: 'Surat', jaipur: 'Jaipur',
   noida: 'Noida', gurugram: 'Gurugram',
+  mahabubnagar: 'Mahabubnagar', siddipet: 'Siddipet',
 };
 
 // Known area slugs per city — used for auto-creation when slug-string IDs are passed
@@ -57,15 +58,22 @@ function isMongoObjectId(value) {
  */
 async function findCityByIdOrSlug(value) {
   if (!value) return null;
-  if (isMongoObjectId(value)) {
-    const city = await City.findById(value);
+  const cityIdentifier = String(value).trim();
+  const citySlug = cityIdentifier.toLowerCase();
+  if (isMongoObjectId(cityIdentifier)) {
+    const city = await City.findById(cityIdentifier);
     if (city) return city;
   }
   // Fallback: treat value as a slug
-  let city = await City.findOne({ slug: value });
-  if (!city && KNOWN_CITY_NAMES[value]) {
+  let city = await City.findOne({ slug: citySlug });
+  if (!city && KNOWN_CITY_NAMES[citySlug]) {
     // Auto-create the city so DEFAULT_CITIES work without pre-seeding
-    city = await City.create({ name: KNOWN_CITY_NAMES[value], slug: value });
+    try {
+      city = await City.create({ name: KNOWN_CITY_NAMES[citySlug], slug: citySlug });
+    } catch (error) {
+      if (error.code !== 11000) throw error;
+      city = await City.findOne({ slug: citySlug });
+    }
   }
   return city;
 }
@@ -259,10 +267,14 @@ router.get('/city-template', authenticate, async (req, res) => {
     if (!categorySlug || !cityId) {
       return res.status(400).json({ error: 'categorySlug and cityId are required' });
     }
+    const city = await findCityByIdOrSlug(cityId);
+    if (!city) {
+      return res.status(404).json({ error: 'City not found' });
+    }
     const template = await SeoPage.findOne({
       pageType: 'city',
       categorySlug,
-      cityId,
+      cityId: city._id,
       status: { $in: ['PUBLISHED', 'APPROVED'] },
       isCurrentVersion: true,
     }).lean();
