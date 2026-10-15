@@ -6,19 +6,7 @@ const Area = require('../models/Area');
 const authenticate = require('../middleware/auth');
 const allowRoles = require('../middleware/roles');
 const { generateFaqSchema } = require('../utils/seoPageUtils');
-
-/**
- * Basic HTML sanitizer to strip dangerous script tags and inline event handlers
- */
-function sanitizeHtml(html) {
-  if (typeof html !== 'string') return '';
-  return html
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-    .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
-    .replace(/\son\w+\s*=\s*(['"]).*?\1/gi, '')
-    .replace(/\son\w+\s*=\s*[^>\s]+/gi, '')
-    .replace(/javascript:/gi, '');
-}
+const { sanitizeHtml } = require('../utils/htmlSanitizer');
 
 /**
  * Helper to normalize slug

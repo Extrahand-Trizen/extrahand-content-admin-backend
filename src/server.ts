@@ -16,6 +16,7 @@ const articlesRouter = require('./routes/articles');
 const adminRouter = require('./routes/admin');
 const seoPagesRouter = require('./routes/seo-pages');
 const blogsRouter = require('./routes/blogs');
+const cityPagesRouter = require('./routes/city-pages');
 const citiesRouter = require('./routes/cities');
 const authenticate = require('./middleware/auth');
 const allowRoles = require('./middleware/roles');
@@ -139,9 +140,11 @@ app.use('/api/task-sub-subcategories', taskSubSubcategoriesRouter);
 app.use('/api/articles', articlesRouter);
 app.use('/api/seo-pages', seoPagesRouter);
 app.use('/api/blogs', blogsRouter);
+app.use('/api/city-pages', cityPagesRouter);
 app.use('/api/cities', citiesRouter);
 // Explicit analytics route so GET /api/admin/analytics always matches (avoids 404)
 app.get('/api/admin/analytics', authenticate, allowRoles('content_access_manager'), analyticsHandler);
+app.use('/api/admin/city-pages', cityPagesRouter.adminRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/invitation', invitationRouter);
 
@@ -182,4 +185,3 @@ const startServer = async () => {
   });
 };
 startServer();
-
