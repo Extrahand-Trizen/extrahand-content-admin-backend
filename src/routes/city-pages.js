@@ -1,5 +1,6 @@
 const express = require('express');
 const mongoose = require('mongoose');
+const axios = require('axios');
 const CityPage = require('../models/CityPage');
 const authenticate = require('../middleware/auth');
 const allowRoles = require('../middleware/roles');
@@ -14,6 +15,45 @@ const isRecord = (value) => value !== null && typeof value === 'object' && !Arra
 const isString = (value) => typeof value === 'string';
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const CITY_PAGE_LIST_FIELDS = 'pageType citySlug cityName status isPublished isCurrentPublished version versionGroupId originalPageId previousVersionId writtenBy reviewedBy rejectedReason publishedAt createdAt updatedAt';
+const DEFAULT_WEBSITE_URL = process.env.NODE_ENV === 'development'
+  ? 'http://localhost:4000'
+  : 'https://extrahand.in';
+
+async function revalidatePublishedCityPage(citySlug) {
+  const secret = process.env.CITY_PAGE_REVALIDATION_SECRET;
+  if (!secret) {
+    return {
+      success: false,
+      message: 'CITY_PAGE_REVALIDATION_SECRET is not configured on the backend',
+    };
+  }
+
+  const websiteUrl = (process.env.WEBSITE_URL || DEFAULT_WEBSITE_URL).replace(/\/+$/, '');
+  const endpoint = process.env.CITY_PAGE_REVALIDATION_URL
+    || `${websiteUrl}/api/city-pages/revalidate`;
+
+  try {
+    const response = await axios.post(
+      endpoint,
+      { citySlug },
+      {
+        headers: { Authorization: `Bearer ${secret}` },
+        timeout: 10000,
+      },
+    );
+    if (response.data?.revalidated !== true) {
+      throw new Error('Website did not confirm City Page cache revalidation');
+    }
+    return { success: true };
+  } catch (error) {
+    const message = error.response?.data?.error || error.message || 'Unknown revalidation error';
+    console.error(`Failed to revalidate published City Page "${citySlug}":`, message);
+    return {
+      success: false,
+      message,
+    };
+  }
+}
 
 function normalizeContent(content) {
   if (!isRecord(content)) return { error: 'content must be an object' };
@@ -411,7 +451,12 @@ adminRouter.post('/:id/publish', async (req, res) => {
       { citySlug: page.citySlug, _id: { $ne: page._id }, isCurrentPublished: true },
       { $set: { status: 'ARCHIVED', isPublished: false, isCurrentPublished: false } }
     );
-    return res.status(200).json({ message: 'City page published successfully', data: page });
+    const revalidation = await revalidatePublishedCityPage(page.citySlug);
+    return res.status(200).json({
+      message: 'City page published successfully',
+      data: page,
+      revalidation,
+    });
   } catch (error) {
     console.error('Error publishing city page:', error);
     return res.status(500).json({ error: 'Failed to publish city page' });
