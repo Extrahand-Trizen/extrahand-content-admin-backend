@@ -301,6 +301,23 @@ router.get('/:id', authenticate, async (req, res) => {
         return res.status(403).json({ error: 'Not authorized to view this page' });
       }
     }
+
+    // If the requested page is PUBLISHED, check for an active draft version.
+    // If one exists, return it so the editor loads the draft's content (including
+    // seoContentBlocks) instead of the stale published copy.
+    if (page.status === 'PUBLISHED') {
+      const activeDraft = await SeoPage.findOne({
+        originalPageId: page._id,
+        status: { $in: ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED'] },
+      }).populate('writtenBy', 'name email').lean();
+
+      if (activeDraft) {
+        // Return the draft but attach the originalPageId so the frontend knows
+        // it is editing a draft of the published page.
+        return res.status(200).json({ ...activeDraft, _editingPublishedId: page._id });
+      }
+    }
+
     return res.status(200).json(page);
   } catch (error) {
     console.error('Error fetching SEO page:', error);
@@ -475,6 +492,11 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_acces
         status: { $in: ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED'] },
       });
 
+      // Debug log — remove after confirming fix
+      console.log('[PUT /seo-pages] PUBLISHED path — seoContentBlocks in req.body:',
+        JSON.stringify(req.body.seoContentBlocks || []).slice(0, 300)
+      );
+
       if (existingDraft) {
         Object.keys(req.body).forEach((key) => {
           if (key !== '_id' && key !== 'writtenBy' && key !== 'originalPageId' && key !== 'isCurrentVersion') {
@@ -485,6 +507,7 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_acces
         existingDraft.status = 'DRAFT';
         existingDraft.rejectedReason = null;
         await existingDraft.save();
+        console.log('[PUT /seo-pages] existingDraft saved — seoContentBlocks count:', (existingDraft.seoContentBlocks || []).length);
         return res.status(200).json({ message: 'Draft updated', data: existingDraft, isExistingDraft: true });
       }
 
@@ -521,12 +544,18 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_acces
         updatedAt: undefined,
       });
       await newVersion.save();
+      console.log('[PUT /seo-pages] newVersion saved — seoContentBlocks count:', (newVersion.seoContentBlocks || []).length);
 
       return res.status(200).json({ message: 'New draft version created', data: newVersion, isNewVersion: true });
     }
 
     // Direct update for non-published pages
     let updateData = { ...req.body };
+
+    // Debug log — remove after confirming fix
+    console.log('[PUT /seo-pages] DRAFT/PENDING path — seoContentBlocks in req.body:',
+      JSON.stringify(updateData.seoContentBlocks || []).slice(0, 300)
+    );
 
     // Re-generate slug and canonical on every update
     const city = await City.findById(existing.cityId);
@@ -562,6 +591,8 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_acces
       }
     });
     await existing.save();
+
+    console.log('[PUT /seo-pages] DRAFT saved — seoContentBlocks count:', (existing.seoContentBlocks || []).length);
 
     // Exclude heroImage from response — it can be megabytes and is not needed by the caller
     const saved = await SeoPage.findById(existing._id).select('-heroImage').populate('writtenBy', 'name email').lean();
