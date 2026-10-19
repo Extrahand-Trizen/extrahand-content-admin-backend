@@ -30,6 +30,8 @@ const seoPageSchema = new mongoose.Schema({
   whyChoose: [{ label: String, description: String }],
   serviceSolutionsHeading: { type: String, default: null },
   serviceSolutionsHeading2: { type: String, default: null },
+  serviceSolutionsDescription: { type: String, default: null },
+  serviceSolutionsPoints: [String],
   serviceSolutions: [{ title: String, description: String }],
   whyExtrahandHeading: { type: String, default: null },
   whyExtrahandDescription: { type: String, default: null },
@@ -39,20 +41,34 @@ const seoPageSchema = new mongoose.Schema({
   whyExtrahandBenefitsIncluded: [String],
   whyExtrahandBenefitsIncludedDescription: { type: String, default: null },
   howItWorks: [{ step: Number, title: String, description: String }],
+  howItWorksDescription: { type: String, default: null },
+  howItWorksPoints: [String],
   benefitsHeading: { type: String, default: null },
   benefitsDescription: { type: String, default: null },
   benefitsOnlyPoints: { type: Boolean, default: false },
   benefits: [String],
   commonProblemsHeading: { type: String, default: null },
+  commonProblemsDescription: { type: String, default: null },
   commonProblems: [String],
   benefitsIncludedHeading: { type: String, default: null },
   benefitsIncluded: [String],
   benefitsIncludedDescription: { type: String, default: null },
 
+  faqsDescription: { type: String, default: null },
+  faqsPoints: [String],
   faqs: [{ question: String, answer: String }],
 
   faqSchema: { type: Object },
   breadcrumbSchema: { type: Object },
+
+  sectionOrder: [{ type: String }],
+  seoContentBlocks: [{
+    id: String,
+    type: { type: String, default: 'content' },
+    title: String,
+    html: String,
+    faqs: [{ id: String, question: String, answer: String }],
+  }],
 
   status: {
     type: String,

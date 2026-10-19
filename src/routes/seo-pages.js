@@ -366,15 +366,23 @@ router.post('/', authenticate, allowRoles('writer', 'reviewer', 'content_access_
     if (pageType === 'area' && area) {
       const fieldsToReplace = [
         'heroHeading', 'heroHeading2', 'heroDescription', 'metaTitle', 'metaDescription',
-        'whyChooseHeading', 'whyChooseDescription', 'whyChoose', 'serviceSolutionsHeading', 'serviceSolutionsHeading2', 'serviceSolutions',
-        'whyExtrahandHeading', 'whyExtrahandDescription', 'whyExtrahand', 'whyExtrahandDescription2', 'whyExtrahandBenefitsIncludedHeading', 'whyExtrahandBenefitsIncluded', 'whyExtrahandBenefitsIncludedDescription', 'howItWorks', 'faqs',
-        'benefitsHeading', 'benefitsDescription', 'benefits', 'commonProblemsHeading', 'commonProblems',
+        'whyChooseHeading', 'whyChooseDescription', 'whyChoose', 'serviceSolutionsHeading', 'serviceSolutionsHeading2', 'serviceSolutionsDescription', 'serviceSolutionsPoints', 'serviceSolutions',
+        'whyExtrahandHeading', 'whyExtrahandDescription', 'whyExtrahand', 'whyExtrahandDescription2', 'whyExtrahandBenefitsIncludedHeading', 'whyExtrahandBenefitsIncluded', 'whyExtrahandBenefitsIncludedDescription', 'howItWorks', 'howItWorksDescription', 'howItWorksPoints', 'faqsDescription', 'faqsPoints', 'faqs',
+        'benefitsHeading', 'benefitsDescription', 'benefits', 'commonProblemsHeading', 'commonProblemsDescription', 'commonProblems',
         'benefitsIncludedHeading', 'benefitsIncluded', 'benefitsIncludedDescription',
       ];
       for (const field of fieldsToReplace) {
         if (contentData[field]) {
           contentData[field] = replaceLocationName(contentData[field], city.name, area.name);
         }
+      }
+      if (contentData.seoContentBlocks && Array.isArray(contentData.seoContentBlocks)) {
+        contentData.seoContentBlocks = contentData.seoContentBlocks.map((block) => ({
+          ...block,
+          title: block.title ? replaceLocationName(block.title, city.name, area.name) : block.title,
+          html: block.html ? replaceLocationName(block.html, city.name, area.name) : block.html,
+          faqs: Array.isArray(block.faqs) ? replaceLocationName(block.faqs, city.name, area.name) : block.faqs,
+        }));
       }
     }
 
@@ -401,6 +409,8 @@ router.post('/', authenticate, allowRoles('writer', 'reviewer', 'content_access_
       whyChoose: contentData.whyChoose || [],
       serviceSolutionsHeading: contentData.serviceSolutionsHeading || null,
       serviceSolutionsHeading2: contentData.serviceSolutionsHeading2 || null,
+      serviceSolutionsDescription: contentData.serviceSolutionsDescription || null,
+      serviceSolutionsPoints: contentData.serviceSolutionsPoints || [],
       serviceSolutions: contentData.serviceSolutions || [],
       whyExtrahandHeading: contentData.whyExtrahandHeading || null,
       whyExtrahandDescription: contentData.whyExtrahandDescription || null,
@@ -410,16 +420,23 @@ router.post('/', authenticate, allowRoles('writer', 'reviewer', 'content_access_
       whyExtrahandBenefitsIncluded: contentData.whyExtrahandBenefitsIncluded || [],
       whyExtrahandBenefitsIncludedDescription: contentData.whyExtrahandBenefitsIncludedDescription || null,
       howItWorks: contentData.howItWorks || [],
+      howItWorksDescription: contentData.howItWorksDescription || null,
+      howItWorksPoints: contentData.howItWorksPoints || [],
       benefitsHeading: contentData.benefitsHeading || null,
       benefitsDescription: contentData.benefitsDescription || null,
       benefitsOnlyPoints: contentData.benefitsOnlyPoints === true || contentData.benefitsOnlyPoints === 'true',
       benefits: contentData.benefits || [],
       commonProblemsHeading: contentData.commonProblemsHeading || null,
+      commonProblemsDescription: contentData.commonProblemsDescription || null,
       commonProblems: contentData.commonProblems || [],
       benefitsIncludedHeading: contentData.benefitsIncludedHeading || null,
       benefitsIncluded: contentData.benefitsIncluded || [],
       benefitsIncludedDescription: contentData.benefitsIncludedDescription || null,
+      faqsDescription: contentData.faqsDescription || null,
+      faqsPoints: contentData.faqsPoints || [],
       faqs: contentData.faqs || [],
+      sectionOrder: contentData.sectionOrder || [],
+      seoContentBlocks: contentData.seoContentBlocks || [],
       faqSchema,
       breadcrumbSchema,
       // Allow 'PENDING_APPROVAL' so frontend can create-and-submit in one request
