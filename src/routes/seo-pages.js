@@ -253,6 +253,22 @@ router.get('/:id', authenticate, async (req, res) => {
         return res.status(403).json({ error: 'Not authorized to view this page' });
       }
     }
+
+    // If the requested page is PUBLISHED, check for an active draft version.
+    // If one exists, return it so the editor loads the draft's content (including
+    // seoContentBlocks) instead of the stale published copy.
+    if (page.status === 'PUBLISHED') {
+      const activeDraft = await SeoPage.findOne({
+        originalPageId: page._id,
+        status: { $in: ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED'] },
+      }).populate('writtenBy', 'name email').lean();
+
+      if (activeDraft) {
+        // Return the draft so the editor loads its content (incl. seoContentBlocks).
+        return res.status(200).json({ ...activeDraft, _editingPublishedId: page._id });
+      }
+    }
+
     return res.status(200).json(page);
   } catch (error) {
     console.error('Error fetching SEO page:', error);
@@ -489,8 +505,12 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_acces
     updateData.faqSchema = faqSchema;
     updateData.breadcrumbSchema = breadcrumbSchema;
 
-    // If rejected or pending approval, move back to draft for re-submission
-    if (['REJECTED', 'PENDING_APPROVAL'].includes(existing.status) && req.user.role === 'writer') {
+    // If status is explicitly set to PENDING_APPROVAL in the body, honour it (direct submit flow).
+    // Otherwise, if the page was previously REJECTED or PENDING_APPROVAL and a writer is re-saving,
+    // reset back to DRAFT so it must go through approval again.
+    if (updateData.status === 'PENDING_APPROVAL') {
+      updateData.rejectedReason = null;
+    } else if (['REJECTED', 'PENDING_APPROVAL'].includes(existing.status) && req.user.role === 'writer') {
       updateData.status = 'DRAFT';
       updateData.rejectedReason = null;
     }
