@@ -13,6 +13,7 @@ const {
   generateBreadcrumbSchema,
   replaceLocationName,
 } = require('../utils/seoPageUtils');
+const { logSeoContentDiagnostic } = require('../utils/seoContentDiagnostics');
 
 const FULL_SEO_PAGE_ACCESS_ROLES = ['reviewer', 'content_access_manager', 'manager'];
 
@@ -302,25 +303,48 @@ router.get('/:id', authenticate, async (req, res) => {
       }
     }
 
+    logSeoContentDiagnostic(req, 'edit.read', {
+      requestedPageId: req.params.id,
+      pageId: page._id.toString(),
+      pageStatus: page.status,
+      source: 'requested-page',
+    }, page);
+
     // If the requested page is PUBLISHED, check for an active draft version.
     // If one exists, return it so the editor loads the draft's content (including
     // seoContentBlocks) instead of the stale published copy.
     if (page.status === 'PUBLISHED') {
+      console.log(`[SEO-DEBUG] Requested page ${page._id} is PUBLISHED. Looking for active draft (originalPageId=${page._id})...`);
       const activeDraft = await SeoPage.findOne({
         originalPageId: page._id,
         status: { $in: ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED'] },
       }).populate('writtenBy', 'name email').lean();
 
       if (activeDraft) {
+        logSeoContentDiagnostic(req, 'edit.read_draft', {
+          requestedPageId: req.params.id,
+          pageId: activeDraft._id.toString(),
+          originalPageId: page._id.toString(),
+          pageStatus: activeDraft.status,
+          source: 'active-draft',
+        }, activeDraft);
         // Return the draft but attach the originalPageId so the frontend knows
         // it is editing a draft of the published page.
         return res.status(200).json({ ...activeDraft, _editingPublishedId: page._id });
+      } else {
+        logSeoContentDiagnostic(req, 'edit.read_no_draft', {
+          requestedPageId: req.params.id,
+          pageId: page._id.toString(),
+          pageStatus: page.status,
+          source: 'published-page',
+        }, page);
       }
+    } else {
     }
 
     return res.status(200).json(page);
   } catch (error) {
-    console.error('Error fetching SEO page:', error);
+    console.error('[SEO-DEBUG] Error fetching SEO page:', error);
     return res.status(500).json({ error: 'Failed to fetch SEO page' });
   }
 });
@@ -329,6 +353,11 @@ router.get('/:id', authenticate, async (req, res) => {
 router.post('/', authenticate, allowRoles('writer', 'reviewer', 'content_access_manager'), async (req, res) => {
   try {
     const body = req.body;
+    logSeoContentDiagnostic(req, 'create.request_received', {
+      pageType: body.pageType || null,
+      categorySlug: body.categorySlug || null,
+      requestedStatus: body.status || 'DRAFT',
+    }, body);
     const { pageType, categoryName, categorySlug, cityId, areaId, heroHeading, heroHeading2, heroDescription, heroImage, metaTitle, metaDescription } = body;
 
     // Identify exactly which required fields are missing
@@ -344,15 +373,28 @@ router.post('/', authenticate, allowRoles('writer', 'reviewer', 'content_access_
 
     if (missingFields.length > 0) {
       console.log('Missing fields:', missingFields, '| Received keys:', Object.keys(body));
+      logSeoContentDiagnostic(req, 'create.rejected_validation', {
+        reason: 'required-fields-missing',
+        missingFields,
+        responseStatus: 400,
+      }, body);
       return res.status(400).json({ error: `Required fields missing: ${missingFields.join(', ')}` });
     }
 
     if (pageType === 'area' && !areaId) {
+      logSeoContentDiagnostic(req, 'create.rejected_validation', {
+        reason: 'area-id-required',
+        responseStatus: 400,
+      }, body);
       return res.status(400).json({ error: 'areaId is required for area pages' });
     }
 
     const city = await findCityByIdOrSlug(cityId);
     if (!city) {
+      logSeoContentDiagnostic(req, 'create.rejected_validation', {
+        reason: 'city-not-found',
+        responseStatus: 404,
+      }, body);
       return res.status(404).json({ error: `City not found for identifier: ${cityId}. Please ensure cities are seeded in the database.` });
     }
 
@@ -360,6 +402,10 @@ router.post('/', authenticate, allowRoles('writer', 'reviewer', 'content_access_
     if (areaId) {
       area = await findAreaByIdOrSlug(areaId, city);
       if (!area) {
+        logSeoContentDiagnostic(req, 'create.rejected_validation', {
+          reason: 'area-not-found',
+          responseStatus: 404,
+        }, body);
         return res.status(404).json({ error: 'Area not found' });
       }
     }
@@ -367,6 +413,12 @@ router.post('/', authenticate, allowRoles('writer', 'reviewer', 'content_access_
     const slug = generateSlug(categorySlug, city.slug, area ? area.slug : null);
     const existing = await SeoPage.findOne({ slug });
     if (existing) {
+      logSeoContentDiagnostic(req, 'create.rejected_validation', {
+        reason: 'slug-already-exists',
+        pageId: existing._id.toString(),
+        slug,
+        responseStatus: 409,
+      }, body);
       return res.status(409).json({ error: 'SEO page with this slug already exists' });
     }
 
@@ -462,14 +514,35 @@ router.post('/', authenticate, allowRoles('writer', 'reviewer', 'content_access_
       writtenBy: req.user._id,
     };
 
+    logSeoContentDiagnostic(req, 'create.before_persist', {
+      slug,
+      pageStatus: pageData.status,
+    }, pageData);
+
     const page = await SeoPage.create(pageData);
+    logSeoContentDiagnostic(req, 'create.persisted', {
+      pageId: page._id.toString(),
+      slug: page.slug,
+      pageStatus: page.status,
+    }, page);
+
     // Exclude heroImage from response — it can be megabytes and is not needed by the caller
     const saved = await SeoPage.findById(page._id).select('-heroImage').populate('writtenBy', 'name email').lean();
+    logSeoContentDiagnostic(req, 'create.response_loaded', {
+      pageId: page._id.toString(),
+      slug,
+      pageStatus: saved ? saved.status : null,
+    }, saved);
 
     const msg = pageData.status === 'PENDING_APPROVAL' ? 'SEO page submitted for approval' : 'SEO page created as draft';
     return res.status(201).json({ message: msg, data: saved });
   } catch (error) {
-    console.error('Error creating SEO page:', error);
+    logSeoContentDiagnostic(req, 'create.failed', {
+      errorName: error.name,
+      errorCode: error.code || null,
+      errorMessage: error.message,
+    }, req.body);
+    console.error('[SEO-DEBUG] Error creating SEO page:', error);
     return res.status(500).json({ error: 'Failed to create SEO page', details: error.message });
   }
 });
@@ -477,13 +550,31 @@ router.post('/', authenticate, allowRoles('writer', 'reviewer', 'content_access_
 // PUT - Update SEO page
 router.put('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_access_manager'), async (req, res) => {
   try {
+    logSeoContentDiagnostic(req, 'update.request_received', {
+      requestedPageId: req.params.id,
+      requestedStatus: req.body.status || null,
+    }, req.body);
     const existing = await SeoPage.findById(req.params.id);
     if (!existing) {
+      logSeoContentDiagnostic(req, 'update.page_not_found', {
+        requestedPageId: req.params.id,
+      });
       return res.status(404).json({ error: 'SEO page not found' });
     }
     if (!['reviewer', 'content_access_manager'].includes(req.user.role) && existing.writtenBy && existing.writtenBy.toString() !== req.user._id.toString()) {
+      logSeoContentDiagnostic(req, 'update.rejected_authorization', {
+        requestedPageId: req.params.id,
+        pageId: existing._id.toString(),
+        responseStatus: 403,
+      }, req.body);
       return res.status(403).json({ error: 'Not authorized to update this page' });
     }
+
+    logSeoContentDiagnostic(req, 'update.page_loaded', {
+      requestedPageId: req.params.id,
+      pageId: existing._id.toString(),
+      pageStatus: existing.status,
+    }, existing);
 
     // Version control: if published, create new draft version
     if (existing.status === 'PUBLISHED') {
@@ -492,11 +583,6 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_acces
         status: { $in: ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED'] },
       });
 
-      // Debug log — remove after confirming fix
-      console.log('[PUT /seo-pages] PUBLISHED path — seoContentBlocks in req.body:',
-        JSON.stringify(req.body.seoContentBlocks || []).slice(0, 300)
-      );
-
       if (existingDraft) {
         Object.keys(req.body).forEach((key) => {
           if (key !== '_id' && key !== 'writtenBy' && key !== 'originalPageId' && key !== 'isCurrentVersion') {
@@ -504,10 +590,16 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_acces
             existingDraft.markModified(key);
           }
         });
-        existingDraft.status = 'DRAFT';
+        existingDraft.status = req.body.status === 'PENDING_APPROVAL' ? 'PENDING_APPROVAL' : 'DRAFT';
         existingDraft.rejectedReason = null;
         await existingDraft.save();
-        console.log('[PUT /seo-pages] existingDraft saved — seoContentBlocks count:', (existingDraft.seoContentBlocks || []).length);
+        logSeoContentDiagnostic(req, 'update.draft_persisted', {
+          requestedPageId: req.params.id,
+          pageId: existingDraft._id.toString(),
+          originalPageId: existing._id.toString(),
+          pageStatus: existingDraft.status,
+          persistencePath: 'existing-draft',
+        }, existingDraft);
         return res.status(200).json({ message: 'Draft updated', data: existingDraft, isExistingDraft: true });
       }
 
@@ -533,7 +625,7 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_acces
         canonicalUrl,
         faqSchema,
         breadcrumbSchema,
-        status: 'DRAFT',
+        status: req.body.status === 'PENDING_APPROVAL' ? 'PENDING_APPROVAL' : 'DRAFT',
         isPublished: false,
         writtenBy: req.user._id,
         originalPageId: existing._id,
@@ -544,18 +636,19 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_acces
         updatedAt: undefined,
       });
       await newVersion.save();
-      console.log('[PUT /seo-pages] newVersion saved — seoContentBlocks count:', (newVersion.seoContentBlocks || []).length);
+      logSeoContentDiagnostic(req, 'update.draft_persisted', {
+        requestedPageId: req.params.id,
+        pageId: newVersion._id.toString(),
+        originalPageId: existing._id.toString(),
+        pageStatus: newVersion.status,
+        persistencePath: 'new-draft-version',
+      }, newVersion);
 
       return res.status(200).json({ message: 'New draft version created', data: newVersion, isNewVersion: true });
     }
 
     // Direct update for non-published pages
     let updateData = { ...req.body };
-
-    // Debug log — remove after confirming fix
-    console.log('[PUT /seo-pages] DRAFT/PENDING path — seoContentBlocks in req.body:',
-      JSON.stringify(updateData.seoContentBlocks || []).slice(0, 300)
-    );
 
     // Re-generate slug and canonical on every update
     const city = await City.findById(existing.cityId);
@@ -592,14 +685,30 @@ router.put('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_acces
     });
     await existing.save();
 
-    console.log('[PUT /seo-pages] DRAFT saved — seoContentBlocks count:', (existing.seoContentBlocks || []).length);
+    logSeoContentDiagnostic(req, 'update.persisted', {
+      requestedPageId: req.params.id,
+      pageId: existing._id.toString(),
+      pageStatus: existing.status,
+      persistencePath: 'direct-update',
+    }, existing);
 
     // Exclude heroImage from response — it can be megabytes and is not needed by the caller
     const saved = await SeoPage.findById(existing._id).select('-heroImage').populate('writtenBy', 'name email').lean();
+    logSeoContentDiagnostic(req, 'update.response_loaded', {
+      requestedPageId: req.params.id,
+      pageId: existing._id.toString(),
+      pageStatus: saved ? saved.status : null,
+    }, saved);
     const msg = existing.status === 'PENDING_APPROVAL' ? 'SEO page submitted for approval' : 'SEO page updated';
     return res.status(200).json({ message: msg, data: saved });
   } catch (error) {
-    console.error('Error updating SEO page:', error);
+    logSeoContentDiagnostic(req, 'update.failed', {
+      requestedPageId: req.params.id,
+      errorName: error.name,
+      errorCode: error.code || null,
+      errorMessage: error.message,
+    }, req.body);
+    console.error('[SEO-DEBUG] Error updating SEO page:', error);
     return res.status(500).json({ error: 'Failed to update SEO page', details: error.message });
   }
 });
@@ -617,7 +726,7 @@ router.delete('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_ac
     await SeoPage.findByIdAndDelete(req.params.id);
     return res.status(200).json({ message: 'SEO page deleted' });
   } catch (error) {
-    console.error('Error deleting SEO page:', error);
+    console.error('[SEO-DEBUG] Error deleting SEO page:', error);
     return res.status(500).json({ error: 'Failed to delete SEO page' });
   }
 });
@@ -625,14 +734,34 @@ router.delete('/:id', authenticate, allowRoles('writer', 'reviewer', 'content_ac
 // POST - Submit SEO page for approval
 router.post('/submit/:id', authenticate, allowRoles('writer', 'reviewer', 'content_access_manager'), async (req, res) => {
   try {
-    const page = await SeoPage.findById(req.params.id).select('writtenBy status');
+    const page = await SeoPage.findById(req.params.id).select('writtenBy status slug sectionOrder seoContentBlocks');
     if (!page) {
+      logSeoContentDiagnostic(req, 'submit.page_not_found', {
+        requestedPageId: req.params.id,
+      });
       return res.status(404).json({ error: 'SEO page not found' });
     }
+    logSeoContentDiagnostic(req, 'submit.request_received', {
+      requestedPageId: req.params.id,
+      pageId: page._id.toString(),
+      slug: page.slug,
+      pageStatus: page.status,
+    }, page);
     if (req.user.role !== 'reviewer' && req.user.role !== 'content_access_manager' && page.writtenBy && page.writtenBy.toString() !== req.user._id.toString()) {
+      logSeoContentDiagnostic(req, 'submit.rejected_authorization', {
+        requestedPageId: req.params.id,
+        pageId: page._id.toString(),
+        responseStatus: 403,
+      }, page);
       return res.status(403).json({ error: 'Not authorized' });
     }
     if (!['DRAFT', 'REJECTED'].includes(page.status)) {
+      logSeoContentDiagnostic(req, 'submit.rejected_status', {
+        requestedPageId: req.params.id,
+        pageId: page._id.toString(),
+        pageStatus: page.status,
+        responseStatus: 400,
+      }, page);
       return res.status(400).json({ error: 'SEO page cannot be submitted for approval' });
     }
     const updated = await SeoPage.findByIdAndUpdate(
@@ -640,9 +769,21 @@ router.post('/submit/:id', authenticate, allowRoles('writer', 'reviewer', 'conte
       { $set: { status: 'PENDING_APPROVAL', rejectedReason: null } },
       { new: true }
     ).select('-heroImage');
+    logSeoContentDiagnostic(req, 'submit.completed', {
+      requestedPageId: req.params.id,
+      pageId: updated._id.toString(),
+      slug: updated.slug,
+      pageStatus: updated.status,
+    }, updated);
     return res.status(200).json({ message: 'SEO page submitted for approval', data: updated });
   } catch (error) {
-    console.error('Error submitting SEO page:', error);
+    logSeoContentDiagnostic(req, 'submit.failed', {
+      requestedPageId: req.params.id,
+      errorName: error.name,
+      errorCode: error.code || null,
+      errorMessage: error.message,
+    });
+    console.error('[SEO-DEBUG] Error submitting SEO page:', error);
     return res.status(500).json({ error: 'Failed to submit SEO page' });
   }
 });

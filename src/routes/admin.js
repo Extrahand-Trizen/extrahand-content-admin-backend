@@ -13,6 +13,7 @@ const { invalidateAuthUserCache } = require('../middleware/auth');
 const allowRoles = require('../middleware/roles');
 const EmailServiceClient = require('../utils/EmailServiceClient');
 const { countByStatus, countUsersByRole, statusCount } = require('../utils/dashboardStats');
+const { logSeoContentDiagnostic } = require('../utils/seoContentDiagnostics');
 
 const SALT_ROUNDS = parseInt(process.env.BCRYPT_SALT_ROUNDS) || 12;
 
@@ -1913,19 +1914,42 @@ router.post('/seo-pages/:id/approve', authenticate, allowRoles('reviewer', 'cont
     }
 
     if (page.status !== 'PENDING_APPROVAL') {
+      logSeoContentDiagnostic(req, 'approval.rejected_status', {
+        pageId: page._id.toString(),
+        slug: page.slug,
+        pageStatus: page.status,
+        responseStatus: 400,
+      }, page);
       return res.status(400).json({ error: 'SEO page cannot be approved. Current status: ' + page.status });
     }
+
+    logSeoContentDiagnostic(req, 'approval.request_received', {
+      pageId: page._id.toString(),
+      slug: page.slug,
+      pageStatus: page.status,
+    }, page);
 
     page.status = 'APPROVED';
     page.reviewedBy = req.user._id;
 
     await page.save();
+    logSeoContentDiagnostic(req, 'approval.completed', {
+      pageId: page._id.toString(),
+      slug: page.slug,
+      pageStatus: page.status,
+    }, page);
 
     return res.status(200).json({
       message: 'SEO page approved successfully.',
       data: page,
     });
   } catch (error) {
+    logSeoContentDiagnostic(req, 'approval.failed', {
+      pageId: req.params.id,
+      errorName: error.name,
+      errorCode: error.code || null,
+      errorMessage: error.message,
+    });
     console.error('Error approving SEO page:', error);
     return res.status(500).json({ error: 'Failed to approve SEO page' });
   }
@@ -1995,10 +2019,23 @@ router.post('/seo-pages/:id/publish', authenticate, allowRoles('reviewer', 'cont
 
     const page = await SeoPage.findById(id);
     if (!page) {
+      logSeoContentDiagnostic(req, 'publish.page_not_found', { pageId: id });
       return res.status(404).json({ error: 'SEO page not found' });
     }
 
+    logSeoContentDiagnostic(req, 'publish.request_received', {
+      pageId: page._id.toString(),
+      slug: page.slug,
+      pageStatus: page.status,
+    }, page);
+
     if (page.status !== 'APPROVED' && page.status !== 'UNPUBLISHED') {
+      logSeoContentDiagnostic(req, 'publish.rejected_status', {
+        pageId: page._id.toString(),
+        slug: page.slug,
+        pageStatus: page.status,
+        responseStatus: 400,
+      }, page);
       return res.status(400).json({ error: 'SEO page must be approved or unpublished before publishing' });
     }
 
@@ -2052,12 +2089,23 @@ router.post('/seo-pages/:id/publish', authenticate, allowRoles('reviewer', 'cont
     page.status = 'PUBLISHED';
     page.isPublished = true;
     page.isCurrentVersion = true;
+    logSeoContentDiagnostic(req, 'publish.completed', {
+      pageId: page._id.toString(),
+      slug: page.slug,
+      pageStatus: page.status,
+    }, page);
 
     return res.status(200).json({
       message: 'SEO page published successfully',
       data: page,
     });
   } catch (error) {
+    logSeoContentDiagnostic(req, 'publish.failed', {
+      pageId: req.params.id,
+      errorName: error.name,
+      errorCode: error.code || null,
+      errorMessage: error.message,
+    });
     console.error('Error publishing SEO page:', error);
     require('fs').appendFileSync('publish_error.log', error.stack + '\n');
     return res.status(500).json({ error: 'Failed to publish SEO page: ' + error.message });
