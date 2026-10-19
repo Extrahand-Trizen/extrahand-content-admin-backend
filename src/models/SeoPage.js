@@ -49,6 +49,15 @@ const seoPageSchema = new mongoose.Schema({
   benefitsIncluded: [String],
   benefitsIncludedDescription: { type: String, default: null },
 
+  sectionOrder: [{ type: String }],
+  seoContentBlocks: [{
+    id: String,
+    type: { type: String, default: 'content' },
+    title: String,
+    html: String,
+    faqs: [{ id: String, question: String, answer: String }],
+  }],
+
   faqs: [{ question: String, answer: String }],
 
   faqSchema: { type: Object },

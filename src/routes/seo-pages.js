@@ -328,6 +328,16 @@ router.post('/', authenticate, allowRoles('writer', 'reviewer', 'content_access_
           contentData[field] = replaceLocationName(contentData[field], city.name, area.name);
         }
       }
+      if (Array.isArray(contentData.seoContentBlocks)) {
+        contentData.seoContentBlocks = contentData.seoContentBlocks.map((block) => ({
+          ...block,
+          title: block.title ? replaceLocationName(block.title, city.name, area.name) : block.title,
+          html: block.html ? replaceLocationName(block.html, city.name, area.name) : block.html,
+          faqs: Array.isArray(block.faqs)
+            ? replaceLocationName(block.faqs, city.name, area.name)
+            : block.faqs,
+        }));
+      }
     }
 
     const pageData = {
@@ -372,6 +382,8 @@ router.post('/', authenticate, allowRoles('writer', 'reviewer', 'content_access_
       benefitsIncluded: contentData.benefitsIncluded || [],
       benefitsIncludedDescription: contentData.benefitsIncludedDescription || null,
       faqs: contentData.faqs || [],
+      sectionOrder: contentData.sectionOrder || [],
+      seoContentBlocks: contentData.seoContentBlocks || [],
       faqSchema,
       breadcrumbSchema,
       status: 'DRAFT',
